@@ -1,0 +1,47 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      LXGA_DB_PATH: /app/data/demo/liu_xi_growth_analytics.duckdb
+      LXGA_DEMO_USERS: ${LXGA_DEMO_USERS:-100000}
+      LXGA_DEMO_SEED: ${LXGA_DEMO_SEED:-42}
+      LXGA_COPILOT_NARRATIVE_MODE: ${LXGA_COPILOT_NARRATIVE_MODE:-deterministic}
+      LXGA_OLLAMA_BASE_URL: ${LXGA_OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      LXGA_OLLAMA_MODEL: ${LXGA_OLLAMA_MODEL:-qwen2.5:7b}
+    volumes:
+      - liu_xi_growth_analytics_data:/app/data/demo
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:8000:8000"
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+      # Keep the service in its bootstrap window while the deterministic demo
+      # database is generated on first launch.
+      start_period: 6m
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  frontend:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+      args:
+        VITE_API_BASE_URL: /
+    ports:
+      - "127.0.0.1:8501:80"
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  liu_xi_growth_analytics_data:

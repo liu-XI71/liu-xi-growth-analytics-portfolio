@@ -1,0 +1,65 @@
+{
+  "snapshot_id": "public_portfolio_snapshot_2026_09_07",
+  "as_of_date": "2026-09-07",
+  "data_boundary": "案例关键变化来自个人经历的去标识化复盘；公开演示不包含雇主生产数据、内部表名、内部代码或用户信息。",
+  "referral": {
+    "case_id": "referral_growth",
+    "invite_click_rate_before_upgrade": 0.21,
+    "invite_click_rate_after_complex_upgrade": 0.17,
+    "invite_click_rate_treatment": 0.235,
+    "share_success_rate": 0.95,
+    "experiment_duration_days": 14,
+    "experiment_total_sample": 7000000,
+    "allocation_ratio": 1.0,
+    "alpha": 0.05,
+    "power": 0.8,
+    "mde_absolute": 0.03,
+    "released_first_month_value_cost_ratio": 2.18,
+    "external_same_scope_value_cost_ratio": 1.9,
+    "incentive_before_index": 100,
+    "incentive_after_index": 160,
+    "incentive_disclosure": "激励强度已指数化为100→160，仅表达相对上调，不公开绝对金额或当前活动定价。",
+    "hypothesis": "页面信息增多、重点分散且邀请按钮位于第二页，可能提高邀请动作的发现成本。",
+    "treatment": "简化信息层级并将邀请按钮放在首页。"
+  },
+  "retention": {
+    "case_id": "new_user_retention",
+    "d1_7_window_retention_before": 0.48,
+    "d1_7_window_retention_after": 0.41,
+    "tablet_retention_gap_absolute": 0.1,
+    "tablet_share_direction": "increase",
+    "tablet_share_before": null,
+    "tablet_share_after": null,
+    "tablet_share_change": null,
+    "benchmark_follow_penetration_ratio": 2.5,
+    "experiment_duration_days": 14,
+    "experiment_total_sample": 300000,
+    "experiment_p_value_upper_bound": 0.05,
+    "experiment_control_rate": null,
+    "experiment_treatment_rate": null,
+    "experiment_absolute_lift": null,
+    "path_result": "下载、注册登录、首页、内容浏览、互动、主页访问和关注等主要路径转化未观察到明显下滑。",
+    "hypothesis": "退出页主页与关注引导可能帮助新用户形成持续内容关系。",
+    "treatment": "用户浏览内容后退出时，展示前往博主主页并关注的引导；对照组不展示引导。"
+  },
+  "synthetic_mix_shift_demo": {
+    "source_type": "synthetic_demo",
+    "disclosure": "下列设备占比和组内留存仅用于演示mix-shift计算，不是实习项目的真实业务数值。",
+    "segments": [
+      {
+        "segment": "手机",
+        "baseline_share": 0.82,
+        "current_share": 0.74,
+        "baseline_rate": 0.5,
+        "current_rate": 0.5
+      },
+      {
+        "segment": "平板",
+        "baseline_share": 0.18,
+        "current_share": 0.26,
+        "baseline_rate": 0.4,
+        "current_rate": 0.4
+      }
+    ]
+  }
+}

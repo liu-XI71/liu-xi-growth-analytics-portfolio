@@ -1,0 +1,15 @@
+{
+  "algorithm": "SHA-256",
+  "encoding": "UTF-8",
+  "input_template": "{salt}:{unit_id}",
+  "salt": "liu_xi_growth_analytics_demo_v1",
+  "digest_slice": "first_8_bytes_big_endian_unsigned",
+  "buckets": 100,
+  "treatment_buckets": 50,
+  "vectors": [
+    { "unit_id": "lx-demo-user-001", "bucket": 2, "group": "treatment" },
+    { "unit_id": "1001", "bucket": 7, "group": "treatment" },
+    { "unit_id": "user-42", "bucket": 66, "group": "control" },
+    { "unit_id": "demo-user", "bucket": 36, "group": "treatment" }
+  ]
+}

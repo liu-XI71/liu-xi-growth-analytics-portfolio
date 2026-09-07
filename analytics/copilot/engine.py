@@ -1,0 +1,1305 @@
+from __future__ import annotations
+
+from typing import Any
+
+from analytics.copilot.contracts import (
+    Claim,
+    ClaimType,
+    EvidenceItem,
+    MetricContract,
+    SourceType,
+)
+from analytics.copilot.evidence import validate_claims
+from analytics.copilot.narrative import generate_narrative
+from analytics.copilot.numbers import normalize_public_numbers
+from analytics.copilot.source import load_source_facts
+from analytics.decomposition import mix_shift_from_aggregates
+
+
+def _metric_contracts() -> list[MetricContract]:
+    return [
+        MetricContract(
+            metric_id="referral_new_users",
+            name="老带新激活用户数",
+            role="result",
+            numerator="活动归因窗口内完成激活的新用户去重数",
+            denominator=None,
+            window="活动归因窗口",
+            grain="日×活动版本",
+            decision_use="衡量老带新带来的最终新增结果",
+            allowed_claims=["衡量拉新结果", "作为DAU增长的新增输入"],
+            forbidden_claims=["不能用邀请点击率替代", "不能直接等同净DAU增量"],
+            source_type=SourceType.METHOD_CONTRACT,
+        ),
+        MetricContract(
+            metric_id="invite_click_rate",
+            name="邀请点击率",
+            role="mechanism",
+            numerator="点击邀请按钮的活动页访问用户UV",
+            denominator="活动页访问用户UV",
+            window="当日",
+            grain="日×活动版本",
+            decision_use="定位邀请动作损失并评价页面改版",
+            allowed_claims=["判断邀请动作是否改善", "生成页面机制假设"],
+            forbidden_claims=["不能单独代表最终拉新结果"],
+            source_type=SourceType.METHOD_CONTRACT,
+        ),
+        MetricContract(
+            metric_id="share_success_rate",
+            name="分享成功率",
+            role="diagnostic",
+            numerator="完成微信分享的邀请点击用户UV",
+            denominator="点击邀请按钮的用户UV",
+            window="当日",
+            grain="日×活动版本",
+            decision_use="判断邀请后的分享完成环节是否异常",
+            allowed_claims=["作为后链路稳定或异常的诊断证据"],
+            forbidden_claims=["不能证明整个老带新链路没有问题"],
+            source_type=SourceType.METHOD_CONTRACT,
+        ),
+        MetricContract(
+            metric_id="d1_7_window_retention",
+            name="次7日内留存率",
+            role="result",
+            numerator="新增后第1至7天内至少回访一次的用户UV",
+            denominator="完整经历7天观察窗的新增用户UV",
+            window="D1—D7窗口",
+            grain="新增Cohort",
+            decision_use="衡量投放新用户的早期留存质量",
+            allowed_claims=["比较次7日内留存", "用于留存实验核心指标"],
+            forbidden_claims=["不能称为精确第7日留存"],
+            source_type=SourceType.METHOD_CONTRACT,
+        ),
+        MetricContract(
+            metric_id="follow_penetration",
+            name="关注行为渗透率",
+            role="exploratory",
+            numerator="观察窗内发生关注行为的用户UV",
+            denominator="对应分析人群UV",
+            window="固定行为观察窗",
+            grain="用户分层×功能",
+            decision_use="筛选可通过产品干预验证的行为线索",
+            allowed_claims=["生成产品假设", "描述标杆与非标杆差异"],
+            forbidden_claims=["相关性不能直接证明关注导致留存"],
+            source_type=SourceType.METHOD_CONTRACT,
+        ),
+        MetricContract(
+            metric_id="first_month_value_cost_ratio",
+            name="首月价值/激励成本倍数",
+            role="decision_guardrail",
+            numerator="新用户首月活跃天数×日均时长×单位时长商业化价值",
+            denominator="归因范围内的邀请激励成本",
+            window="首月",
+            grain="活动版本",
+            decision_use="与同窗口外部投放比较投入效率",
+            allowed_claims=["同期同口径渠道比较", "作为投入决策护栏"],
+            forbidden_claims=["不能称为完整生命周期价值、完整获客成本或净收益率"],
+            source_type=SourceType.METHOD_CONTRACT,
+        ),
+    ]
+
+
+def _referral_experiment(source: dict[str, Any]) -> dict[str, Any]:
+    control_rate = source["invite_click_rate_after_complex_upgrade"]
+    treatment_rate = source["invite_click_rate_treatment"]
+    absolute_lift = treatment_rate - control_rate
+    return normalize_public_numbers(
+        {
+            "mode": "confirmed_project_summary",
+            "control_rate": control_rate,
+            "treatment_rate": treatment_rate,
+            "absolute_lift": absolute_lift,
+            "absolute_lift_pp": 100 * absolute_lift,
+            "relative_lift_pct": 100 * absolute_lift / control_rate,
+            "duration_days": source["experiment_duration_days"],
+            "total_sample": source["experiment_total_sample"],
+            "allocation_design": "1:1 random split",
+            "significance": "p < 0.05",
+            "business_mde_absolute": source["mde_absolute"],
+            "actual_control_n": None,
+            "actual_treatment_n": None,
+            "aa_result": None,
+            "srm_result": None,
+            "stratified_balance_result": None,
+            "z_stat": None,
+            "exact_p_value": None,
+            "disclosure": (
+                "项目复盘仅确认总样本、1:1分流设计、两组率、周期与p<0.05；"
+                "实际组内人数、AA、SRM、分层均衡、精确Z值和精确p值未披露。"
+            ),
+        }
+    )
+
+
+def _synthetic_mix_shift(source: dict[str, Any]) -> dict[str, Any]:
+    rows = []
+    for item in source["segments"]:
+        rows.append(
+            {
+                "segment": item["segment"],
+                "baseline_users": round(10_000 * item["baseline_share"]),
+                "current_users": round(10_000 * item["current_share"]),
+                "baseline_rate": item["baseline_rate"],
+                "current_rate": item["current_rate"],
+            }
+        )
+    result = mix_shift_from_aggregates(rows)
+    result.update(
+        {
+            "source_type": "synthetic_demo",
+            "synthetic": True,
+            "disclosure": source["disclosure"],
+        }
+    )
+    return result
+
+
+def _evidence(
+    facts: dict[str, Any], referral_experiment: dict[str, Any], mix_demo: dict[str, Any]
+) -> list[EvidenceItem]:
+    referral = facts["referral"]
+    retention = facts["retention"]
+    invite_decline_pp = 100 * (
+        referral["invite_click_rate_after_complex_upgrade"]
+        - referral["invite_click_rate_before_upgrade"]
+    )
+    effect = referral_experiment
+    retention_change_pp = 100 * (
+        retention["d1_7_window_retention_after"] - retention["d1_7_window_retention_before"]
+    )
+    normalized_visits = 10_000
+    return [
+        EvidenceItem(
+            id="ev_referral_version_trend",
+            case_id="referral_growth",
+            evidence_type="descriptive_monitoring",
+            source_type=SourceType.EXPERIENCE_FACT,
+            title="邀请点击率版本变化",
+            metric_id="invite_click_rate",
+            values={
+                "before_upgrade_rate": referral["invite_click_rate_before_upgrade"],
+                "after_complex_upgrade_rate": referral["invite_click_rate_after_complex_upgrade"],
+                "absolute_change_pp": invite_decline_pp,
+                "absolute_change_magnitude_pp": abs(invite_decline_pp),
+            },
+            unit="rate_and_percentage_points",
+            statement="玩法升级后邀请点击率从约21%下降到17%。",
+            calculation="100 × (17% - 21%) = -4pp",
+            claim_boundary="版本变化定位异常，不单独识别页面机制的因果效果。",
+            source_ref="案例事实合同 · 老带新增长",
+        ),
+        EvidenceItem(
+            id="ev_referral_partial_funnel",
+            case_id="referral_growth",
+            evidence_type="derived_funnel",
+            source_type=SourceType.DERIVED_CALCULATION,
+            title="每万活动页访问用户的已知链路折算",
+            metric_id="invite_click_rate",
+            values={
+                "normalized_visits": normalized_visits,
+                "diagnostic_stage": {
+                    "label": "复杂升级后",
+                    "invite_clicks": normalized_visits
+                    * referral["invite_click_rate_after_complex_upgrade"],
+                    "share_successes": normalized_visits
+                    * referral["invite_click_rate_after_complex_upgrade"]
+                    * referral["share_success_rate"],
+                },
+            },
+            unit="normalized_users_per_10k_page_visits",
+            statement="按每万活动页访问用户标准化，仅折算已确认的邀请点击和分享成功环节。",
+            calculation="访问用户×邀请点击率×分享成功率；未公开节点不进行估算。",
+            claim_boundary=(
+                "标准化折算不代表生产流量规模；95%为项目已知分享成功率，"
+                "仅用于诊断阶段情景折算，不用于比较不同版本的分享率；"
+                "现有证据不足以报告新用户激活率。"
+            ),
+            source_ref="决策引擎 · 拉新增量测算",
+        ),
+        EvidenceItem(
+            id="ev_referral_share_negative",
+            case_id="referral_growth",
+            evidence_type="negative_evidence",
+            source_type=SourceType.EXPERIENCE_FACT,
+            title="分享成功率保持高位",
+            metric_id="share_success_rate",
+            values={"share_success_rate": referral["share_success_rate"]},
+            unit="rate",
+            statement="微信分享成功率约95%，降低分享完成环节作为主要断点的优先级。",
+            claim_boundary="该负证据不能证明整个老带新链路没有问题。",
+            source_ref="案例事实合同 · 老带新增长",
+        ),
+        EvidenceItem(
+            id="ev_referral_experiment",
+            case_id="referral_growth",
+            evidence_type="randomized_experiment",
+            source_type=SourceType.EXPERIENCE_FACT,
+            title="邀请页面简化实验",
+            metric_id="invite_click_rate",
+            values={
+                "control_rate": effect["control_rate"],
+                "treatment_rate": effect["treatment_rate"],
+                "absolute_lift": effect["absolute_lift"],
+                "absolute_lift_pp": effect["absolute_lift_pp"],
+                "relative_lift_pct": round(effect["relative_lift_pct"], 1),
+                "significance": effect["significance"],
+                "alpha": referral["alpha"],
+                "duration_days": referral["experiment_duration_days"],
+                "total_sample": referral["experiment_total_sample"],
+                "allocation_design": effect["allocation_design"],
+                "actual_control_n": None,
+                "actual_treatment_n": None,
+                "aa_result": None,
+                "srm_result": None,
+                "stratified_balance_result": None,
+            },
+            unit="rate_percentage_points_and_users",
+            statement=(
+                "实验采用1:1随机分流设计，运行两周、总样本约700万；邀请点击率从17%升至23.5%。"
+            ),
+            calculation="二比例差异检验；绝对提升6.5pp，相对提升约38.2%。",
+            claim_boundary=(
+                "项目仅确认p<0.05；实际组内人数、AA、SRM、分层均衡与精确Z/p未披露。"
+                "实验识别完整首屏简化组合策略。"
+            ),
+            source_ref="案例事实合同 · 老带新增长",
+        ),
+        EvidenceItem(
+            id="ev_referral_value_cost",
+            case_id="referral_growth",
+            evidence_type="economics_guardrail",
+            source_type=SourceType.EXPERIENCE_FACT,
+            title="首月价值与归因激励成本比较",
+            metric_id="first_month_value_cost_ratio",
+            values={
+                "released_ratio": referral["released_first_month_value_cost_ratio"],
+                "external_same_scope_ratio": referral["external_same_scope_value_cost_ratio"],
+                "released_minus_external": referral["released_first_month_value_cost_ratio"]
+                - referral["external_same_scope_value_cost_ratio"],
+            },
+            unit="ratio",
+            statement="策略版本首月价值/激励成本倍数为2.18，高于同口径外投的1.90。",
+            calculation="首月估算价值÷归因范围内激励成本。",
+            claim_boundary=("不是完整生命周期价值、完整获客成本或净收益率；仅用于同期同口径比较。"),
+            source_ref="案例事实合同 · 老带新增长",
+        ),
+        EvidenceItem(
+            id="ev_referral_incentive_reconstruction",
+            case_id="referral_growth",
+            evidence_type="experience_reconstruction",
+            source_type=SourceType.EXPERIENCE_RECONSTRUCTION,
+            title="激励策略变化",
+            metric_id=None,
+            values={
+                "before_index": referral["incentive_before_index"],
+                "after_index": referral["incentive_after_index"],
+            },
+            unit="indexed_incentive_intensity",
+            statement=f"激励强度指数从100调整至160。{referral['incentive_disclosure']}",
+            claim_boundary=referral["incentive_disclosure"],
+            source_ref="案例事实合同 · 老带新增长",
+        ),
+        EvidenceItem(
+            id="ev_retention_trend",
+            case_id="new_user_retention",
+            evidence_type="descriptive_monitoring",
+            source_type=SourceType.EXPERIENCE_FACT,
+            title="次7日内留存率异常",
+            metric_id="d1_7_window_retention",
+            values={
+                "before_rate": retention["d1_7_window_retention_before"],
+                "after_rate": retention["d1_7_window_retention_after"],
+                "absolute_change_pp": retention_change_pp,
+                "absolute_change_magnitude_pp": abs(retention_change_pp),
+                "window_start_day": 1,
+                "window_end_day": 7,
+            },
+            unit="rate_and_percentage_points",
+            statement="新增用户次7日内留存率从48%下降到41%，下降7pp。",
+            calculation="100 × (41% - 48%) = -7pp",
+            claim_boundary="次7日内留存率表示新增后第1至7天内至少回访一次，不等于精确D7留存。",
+            source_ref="案例事实合同 · 新用户留存",
+        ),
+        EvidenceItem(
+            id="ev_retention_device_structure",
+            case_id="new_user_retention",
+            evidence_type="descriptive_segmentation",
+            source_type=SourceType.EXPERIENCE_FACT,
+            title="设备结构压力与量化缺口",
+            metric_id="d1_7_window_retention",
+            values={
+                "tablet_gap_absolute": retention["tablet_retention_gap_absolute"],
+                "tablet_gap_pp": 100 * retention["tablet_retention_gap_absolute"],
+                "tablet_share_direction": retention["tablet_share_direction"],
+                "tablet_share_before": retention["tablet_share_before"],
+                "tablet_share_after": retention["tablet_share_after"],
+                "tablet_share_change": retention["tablet_share_change"],
+                "retention_decline_magnitude_pp": abs(retention_change_pp),
+            },
+            unit="percentage_points_and_missing_mix",
+            statement=(
+                "平板留存比手机低约10pp，且平板新增占比方向上升，说明设备结构形成压力；"
+                "但缺少分期设备占比，无法精确计算真实结构贡献。"
+            ),
+            calculation=(
+                "真实结构贡献需要分期占比变化×分层留存差；当前占比变化未提供，因此不计算。"
+            ),
+            claim_boundary=(
+                "只能识别结构压力方向，不能量化贡献、剩余变化或宣称设备结构解释全部下滑。"
+            ),
+            source_ref="案例事实合同 · 新用户留存",
+        ),
+        EvidenceItem(
+            id="ev_retention_path_negative",
+            case_id="new_user_retention",
+            evidence_type="negative_evidence",
+            source_type=SourceType.EXPERIENCE_FACT,
+            title="主要产品路径未见明显恶化",
+            metric_id=None,
+            values={},
+            unit=None,
+            statement=retention["path_result"],
+            claim_boundary="降低已检查路径存在普遍阻塞作为主要解释的优先级，但不代表所有产品体验问题均已排除。",
+            source_ref="案例事实合同 · 新用户留存",
+        ),
+        EvidenceItem(
+            id="ev_retention_benchmark",
+            case_id="new_user_retention",
+            evidence_type="correlational_benchmark",
+            source_type=SourceType.EXPERIENCE_FACT,
+            title="标杆用户关注渗透差异",
+            metric_id="follow_penetration",
+            values={
+                "benchmark_to_non_benchmark_ratio": retention["benchmark_follow_penetration_ratio"]
+            },
+            unit="ratio",
+            statement="标杆用户关注渗透率约为非标杆用户的2.5倍。",
+            claim_boundary="标杆比较存在用户自选择，只能生成假设，不能证明单一行为因果。",
+            source_ref="案例事实合同 · 新用户留存",
+        ),
+        EvidenceItem(
+            id="ev_retention_experiment",
+            case_id="new_user_retention",
+            evidence_type="randomized_experiment",
+            source_type=SourceType.EXPERIENCE_FACT,
+            title="退出页主页与关注引导实验",
+            metric_id="d1_7_window_retention",
+            values={
+                "duration_days": retention["experiment_duration_days"],
+                "total_sample": retention["experiment_total_sample"],
+                "p_value_upper_bound": retention["experiment_p_value_upper_bound"],
+                "control_rate": retention["experiment_control_rate"],
+                "treatment_rate": retention["experiment_treatment_rate"],
+                "absolute_lift": retention["experiment_absolute_lift"],
+                "window_start_day": 1,
+                "window_end_day": 7,
+            },
+            unit="users_and_significance_boundary",
+            statement="实验运行两周、总样本约30万，次7日内留存率显著提升，p<0.05。",
+            claim_boundary=(
+                "未提供实验组和对照组绝对留存率，不能计算绝对或相对提升；"
+                "实验识别完整退出页引导策略。"
+            ),
+            source_ref="案例事实合同 · 新用户留存",
+        ),
+        EvidenceItem(
+            id="ev_synthetic_mix_shift",
+            case_id="new_user_retention",
+            evidence_type="method_demonstration",
+            source_type=SourceType.SYNTHETIC_DEMO,
+            title="模拟设备mix-shift计算",
+            metric_id="d1_7_window_retention",
+            values=mix_demo,
+            unit="rate",
+            statement=f"模拟设备数据演示结构、组内与交互项勾稽。{mix_demo['disclosure']}",
+            calculation="Kitagawa三项分解，勾稽误差应接近0。",
+            claim_boundary="模拟占比和组内留存不能作为实习项目的真实业务事实。",
+            synthetic=True,
+            source_ref="脱敏演示数据 · 设备结构分解",
+        ),
+        EvidenceItem(
+            id="ev_method_experiment_governance",
+            case_id="cross_case",
+            evidence_type="method_contract",
+            source_type=SourceType.METHOD_CONTRACT,
+            title="实验治理规则",
+            metric_id=None,
+            values={
+                "alpha": 0.05,
+                "power": 0.8,
+                "hash_buckets": 100,
+                "window_start_day": 1,
+                "window_end_day": 7,
+            },
+            unit=None,
+            statement="样本量、SRM、稳定Hash分流、固定周期和决策条件由确定性程序执行。",
+            claim_boundary="叙事模型不计算统计量，也不能根据中途未经校正的p值停止实验。",
+            source_ref="实验计算引擎 · A/B 设计与评估",
+        ),
+        EvidenceItem(
+            id="ev_public_data_boundary",
+            case_id="cross_case",
+            evidence_type="governance_boundary",
+            source_type=SourceType.METHOD_CONTRACT,
+            title="公开数据边界",
+            metric_id=None,
+            values={},
+            unit=None,
+            statement=facts["data_boundary"],
+            claim_boundary="两个案例共享分析方法，不共享同一套生产数据。",
+            source_ref="公开数据边界合同",
+        ),
+    ]
+
+
+def _claims() -> list[Claim]:
+    return [
+        Claim(
+            id="cl_referral_anomaly",
+            case_id="referral_growth",
+            statement="玩法升级后邀请点击率从约21%降到17%，下降4pp。",
+            claim_type=ClaimType.FACT,
+            evidence_ids=["ev_referral_version_trend"],
+            confidence="high",
+            allowed_scope="去标识化版本监测事实",
+        ),
+        Claim(
+            id="cl_referral_negative",
+            case_id="referral_growth",
+            statement="分享成功率约95%，降低分享完成环节作为主要断点的优先级。",
+            claim_type=ClaimType.NEGATIVE_EVIDENCE,
+            evidence_ids=["ev_referral_share_negative"],
+            confidence="high",
+            allowed_scope="分享环节诊断",
+        ),
+        Claim(
+            id="cl_referral_hypothesis",
+            case_id="referral_growth",
+            statement="页面信息复杂且邀请入口后置可能提高动作发现成本。",
+            claim_type=ClaimType.HYPOTHESIS,
+            evidence_ids=["ev_referral_version_trend", "ev_referral_share_negative"],
+            confidence="medium",
+            allowed_scope="进入实验前的产品机制假设",
+        ),
+        Claim(
+            id="cl_referral_causal",
+            case_id="referral_growth",
+            statement="随机实验支持首屏简化组合策略提升邀请点击率：17%升至23.5%，提升6.5pp。",
+            claim_type=ClaimType.CAUSAL_RESULT,
+            evidence_ids=["ev_referral_experiment"],
+            confidence="high",
+            allowed_scope="实验覆盖人群、组合策略与两周固定窗口",
+        ),
+        Claim(
+            id="cl_referral_economics",
+            case_id="referral_growth",
+            statement="策略版本首月价值/激励成本倍数为2.18，高于同口径外投的1.90。",
+            claim_type=ClaimType.FACT,
+            evidence_ids=["ev_referral_value_cost"],
+            confidence="high",
+            allowed_scope="首月同窗口、同归因成本口径比较",
+        ),
+        Claim(
+            id="cl_referral_decision",
+            case_id="referral_growth",
+            statement="实验效果和首月价值护栏共同支持在该版本上持续迭代、优化并监控。",
+            claim_type=ClaimType.RECOMMENDATION,
+            evidence_ids=["ev_referral_experiment", "ev_referral_value_cost"],
+            confidence="high",
+            allowed_scope="当前页面版本和已观察成本口径",
+        ),
+        Claim(
+            id="cl_retention_anomaly",
+            case_id="new_user_retention",
+            statement="次7日内留存率从48%降到41%，下降7pp。",
+            claim_type=ClaimType.FACT,
+            evidence_ids=["ev_retention_trend"],
+            confidence="high",
+            allowed_scope="次7日内留存率",
+        ),
+        Claim(
+            id="cl_retention_structure",
+            case_id="new_user_retention",
+            statement=(
+                "平板留存比手机低约10pp且平板新增占比方向上升，设备结构形成压力；"
+                "但缺少占比变化，无法精确计算真实贡献。"
+            ),
+            claim_type=ClaimType.LIMITATION,
+            evidence_ids=["ev_retention_device_structure", "ev_retention_trend"],
+            confidence="high",
+            allowed_scope="设备分层方向判断和真实量化缺口",
+        ),
+        Claim(
+            id="cl_retention_path_negative",
+            case_id="new_user_retention",
+            statement=(
+                "主要产品路径转化未观察到同步下降，降低已检查路径存在普遍阻塞"
+                "作为主要解释的排查优先级。"
+            ),
+            claim_type=ClaimType.NEGATIVE_EVIDENCE,
+            evidence_ids=["ev_retention_path_negative"],
+            confidence="medium",
+            allowed_scope="已覆盖的主要产品路径",
+        ),
+        Claim(
+            id="cl_retention_benchmark",
+            case_id="new_user_retention",
+            statement="标杆用户关注渗透率约为非标杆用户的2.5倍，这只是相关性线索。",
+            claim_type=ClaimType.INTERPRETATION,
+            evidence_ids=["ev_retention_benchmark"],
+            confidence="medium",
+            allowed_scope="标杆与非标杆描述性比较",
+        ),
+        Claim(
+            id="cl_retention_hypothesis",
+            case_id="new_user_retention",
+            statement="退出页主页与关注引导可能帮助用户建立持续内容关系。",
+            claim_type=ClaimType.HYPOTHESIS,
+            evidence_ids=["ev_retention_benchmark", "ev_retention_path_negative"],
+            confidence="medium",
+            allowed_scope="需要随机实验验证的产品机制",
+        ),
+        Claim(
+            id="cl_retention_causal",
+            case_id="new_user_retention",
+            statement="随机实验支持完整退出页主页与关注引导策略改善次7日内留存率。",
+            claim_type=ClaimType.CAUSAL_RESULT,
+            evidence_ids=["ev_retention_experiment"],
+            confidence="high",
+            allowed_scope="实验覆盖人群、完整组合策略和两周窗口",
+        ),
+        Claim(
+            id="cl_retention_unknown_lift",
+            case_id="new_user_retention",
+            statement="实验组和对照组绝对留存率未提供，现有证据不足以报告绝对提升幅度。",
+            claim_type=ClaimType.LIMITATION,
+            evidence_ids=["ev_retention_experiment"],
+            confidence="high",
+            allowed_scope="公开案例事实边界",
+        ),
+        Claim(
+            id="cl_synthetic_mix_disclosure",
+            case_id="new_user_retention",
+            statement="模拟设备占比仅演示mix-shift计算，不是实习项目的真实业务事实。",
+            claim_type=ClaimType.FACT,
+            evidence_ids=["ev_synthetic_mix_shift"],
+            confidence="high",
+            allowed_scope="方法演示",
+        ),
+    ]
+
+
+def _analysis_threads() -> list[dict[str, Any]]:
+    return [
+        {
+            "id": "analysis_referral_breakpoint",
+            "case_id": "referral_growth",
+            "title": "激励升级后为什么邀请表现下降",
+            "root_question": "激励和玩法升级后，老带新表现为什么反而下降？",
+            "status": "completed",
+            "steps": [
+                {
+                    "id": "ref_step_1",
+                    "order": 1,
+                    "type": "metric_definition",
+                    "title": "先确定结果与机制指标",
+                    "summary": "最终结果是拉新用户数，邀请点击率用于定位页面机制。",
+                    "status": "supported",
+                    "evidence_ids": ["ev_method_experiment_governance"],
+                    "chart": {"type": "metric_tree", "data_key": "metric_contracts"},
+                },
+                {
+                    "id": "ref_step_2",
+                    "order": 2,
+                    "type": "trend",
+                    "title": "定位版本异常",
+                    "summary": "邀请点击率从约21%降至17%，异常落在邀请动作。",
+                    "status": "supported",
+                    "evidence_ids": ["ev_referral_version_trend"],
+                    "chart": {"type": "version_line", "data_key": "version_trend"},
+                },
+                {
+                    "id": "ref_step_3",
+                    "order": 3,
+                    "type": "negative_evidence",
+                    "title": "降低后续分享环节排查优先级",
+                    "summary": "分享成功率约95%，优先回到邀请动作之前排查。",
+                    "status": "supported",
+                    "evidence_ids": ["ev_referral_share_negative"],
+                    "chart": {"type": "partial_funnel", "data_key": "normalized_funnel"},
+                },
+                {
+                    "id": "ref_step_4",
+                    "order": 4,
+                    "type": "hypothesis",
+                    "title": "形成可验证产品假设",
+                    "summary": "页面复杂和邀请入口后置可能提高发现成本。",
+                    "status": "hypothesis",
+                    "evidence_ids": ["ev_referral_version_trend", "ev_referral_share_negative"],
+                    "chart": {"type": "evidence_chain", "data_key": "claims"},
+                },
+                {
+                    "id": "ref_step_5",
+                    "order": 5,
+                    "type": "experiment",
+                    "title": "用随机实验验证完整策略",
+                    "summary": "首屏简化策略将邀请点击率从17%提升至23.5%。",
+                    "status": "causal_supported",
+                    "evidence_ids": ["ev_referral_experiment"],
+                    "chart": {"type": "experiment_interval", "data_key": "experiment"},
+                },
+                {
+                    "id": "ref_step_6",
+                    "order": 6,
+                    "type": "decision",
+                    "title": "进入价值护栏决策",
+                    "summary": "首月价值/激励成本倍数为2.18，高于同口径外投的1.90。",
+                    "status": "ship_with_monitoring",
+                    "evidence_ids": ["ev_referral_value_cost"],
+                    "chart": {"type": "benchmark_bar", "data_key": "economics"},
+                },
+            ],
+            "branches": [
+                {"id": "ref_branch_funnel", "label": "查看标准化漏斗", "to_step": "ref_step_3"},
+                {
+                    "id": "ref_branch_experiment",
+                    "label": "查看实验决策条件",
+                    "to_step": "ref_step_5",
+                },
+            ],
+        },
+        {
+            "id": "analysis_retention_decline",
+            "case_id": "new_user_retention",
+            "title": "次7日内留存率下降归因",
+            "root_question": "设备结构变化能解释全部留存下降吗？",
+            "status": "completed",
+            "steps": [
+                {
+                    "id": "ret_step_1",
+                    "order": 1,
+                    "type": "trend",
+                    "title": "定义并确认异常",
+                    "summary": "次7日内留存率从48%降至41%。",
+                    "status": "supported",
+                    "evidence_ids": ["ev_retention_trend"],
+                    "chart": {"type": "retention_trend", "data_key": "retention_trend"},
+                },
+                {
+                    "id": "ret_step_2",
+                    "order": 2,
+                    "type": "mix_shift",
+                    "title": "识别设备结构压力与数据缺口",
+                    "summary": "设备结构形成下行压力，但缺少分期设备占比，无法准确量化结构贡献。",
+                    "status": "direction_supported_quantification_blocked",
+                    "evidence_ids": ["ev_retention_device_structure"],
+                    "chart": {"type": "evidence_gap", "data_key": "device_structure"},
+                },
+                {
+                    "id": "ret_step_3",
+                    "order": 3,
+                    "type": "negative_evidence",
+                    "title": "检查基础产品路径",
+                    "summary": "主要路径转化率未观察到同步下降，降低普遍路径阻塞的调查优先级。",
+                    "status": "not_primary_explanation",
+                    "evidence_ids": ["ev_retention_path_negative"],
+                    "chart": {"type": "path_status", "data_key": "path"},
+                },
+                {
+                    "id": "ret_step_4",
+                    "order": 4,
+                    "type": "benchmark",
+                    "title": "从标杆用户寻找可干预线索",
+                    "summary": "标杆用户关注渗透率约为非标杆的2.5倍，但仍是相关性。",
+                    "status": "correlational",
+                    "evidence_ids": ["ev_retention_benchmark"],
+                    "chart": {"type": "ratio_bar", "data_key": "benchmark"},
+                },
+                {
+                    "id": "ret_step_5",
+                    "order": 5,
+                    "type": "experiment",
+                    "title": "验证退出页引导策略",
+                    "summary": "两周、约30万总样本，次7日内留存率显著提升；绝对提升未公开。",
+                    "status": "causal_supported_lift_unknown",
+                    "evidence_ids": ["ev_retention_experiment"],
+                    "chart": {"type": "experiment_boundary", "data_key": "experiment"},
+                },
+            ],
+            "branches": [
+                {"id": "ret_branch_mix", "label": "查看结构量化缺口", "to_step": "ret_step_2"},
+                {"id": "ret_branch_method", "label": "查看模拟分解", "to_step": "ret_step_2"},
+                {"id": "ret_branch_experiment", "label": "查看实验边界", "to_step": "ret_step_5"},
+            ],
+        },
+    ]
+
+
+def _questions() -> list[dict[str, Any]]:
+    return [
+        {
+            "id": "question_referral_decline",
+            "case_id": "referral_growth",
+            "question": "激励升级后，为什么邀请表现反而下降？",
+            "answer_summary": "主要断点位于邀请点击；分享成功率约95%，支持优先调查页面信息复杂度与入口可发现性。",
+            "analysis_id": "analysis_referral_breakpoint",
+            "tags": ["漏斗", "负证据", "产品假设"],
+            "evidence_ids": ["ev_referral_version_trend", "ev_referral_share_negative"],
+            "status": "supported_hypothesis",
+        },
+        {
+            "id": "question_referral_effect",
+            "case_id": "referral_growth",
+            "question": "页面简化实验带来了多大提升？",
+            "answer_summary": "邀请点击率17%→23.5%，绝对提升6.5pp、相对提升约38.2%。",
+            "analysis_id": "analysis_referral_breakpoint",
+            "tags": ["A/B实验", "统计显著", "业务显著"],
+            "evidence_ids": ["ev_referral_experiment"],
+            "status": "causal_supported",
+        },
+        {
+            "id": "question_referral_value",
+            "case_id": "referral_growth",
+            "question": "实验显著后为什么还要看首月价值？",
+            "answer_summary": "显著性只回答策略是否有效；2.18高于同口径外投1.90才支持投入可接受。",
+            "analysis_id": "analysis_referral_breakpoint",
+            "tags": ["价值护栏", "渠道比较"],
+            "evidence_ids": ["ev_referral_experiment", "ev_referral_value_cost"],
+            "status": "decision_supported",
+        },
+        {
+            "id": "question_retention_structure",
+            "case_id": "new_user_retention",
+            "question": "设备结构变化能解释全部7pp留存下降吗？",
+            "answer_summary": "现有信息只能确认设备结构形成压力；缺少分期占比变化，无法精确计算真实贡献。",
+            "analysis_id": "analysis_retention_decline",
+            "tags": ["用户分层", "结构归因", "数据缺口"],
+            "evidence_ids": ["ev_retention_trend", "ev_retention_device_structure"],
+            "status": "quantification_blocked",
+        },
+        {
+            "id": "question_retention_path",
+            "case_id": "new_user_retention",
+            "question": "核心路径转化率未同步下降，能否排除所有产品体验问题？",
+            "answer_summary": "不能；该结果仅降低已检查路径作为主要解释的优先级。",
+            "analysis_id": "analysis_retention_decline",
+            "tags": ["路径漏斗", "负证据"],
+            "evidence_ids": ["ev_retention_path_negative"],
+            "status": "negative_evidence",
+        },
+        {
+            "id": "question_retention_causality",
+            "case_id": "new_user_retention",
+            "question": "关注渗透率2.5倍是否证明关注导致留存？",
+            "answer_summary": "不能；标杆差异只是相关性，随机实验评价的是完整退出页引导策略。",
+            "analysis_id": "analysis_retention_decline",
+            "tags": ["标杆分析", "相关性", "因果边界"],
+            "evidence_ids": ["ev_retention_benchmark", "ev_retention_experiment"],
+            "status": "correlation_only",
+        },
+        {
+            "id": "question_retention_lift",
+            "case_id": "new_user_retention",
+            "question": "留存实验的绝对提升是多少？",
+            "answer_summary": "现有事实未提供实验组和对照组绝对留存率，因此不报告绝对效果量。",
+            "analysis_id": "analysis_retention_decline",
+            "tags": ["缺失事实", "效果量边界"],
+            "evidence_ids": ["ev_retention_experiment"],
+            "status": "insufficient_data",
+        },
+    ]
+
+
+def _case_payloads(
+    facts: dict[str, Any], referral_experiment: dict[str, Any], mix_demo: dict[str, Any]
+) -> list[dict[str, Any]]:
+    referral = facts["referral"]
+    retention = facts["retention"]
+    visits = 10_000
+    return [
+        {
+            "id": "referral_growth",
+            "name": "老带新增长诊断",
+            "business_question": "外部拉新供给承压时，如何提升老带新新增规模并维持首月投入效率？",
+            "primary_metric": "referral_new_users",
+            "mechanism_metric": "invite_click_rate",
+            "decision_metric": "first_month_value_cost_ratio",
+            "data_boundary": "关键变化为去标识化经历事实；标准化漏斗仅折算已确认节点。",
+            "analysis_ids": ["analysis_referral_breakpoint"],
+            "question_ids": [
+                "question_referral_decline",
+                "question_referral_effect",
+                "question_referral_value",
+            ],
+            "weekly_report_id": "weekly_referral",
+            "analysis_data": {
+                "version_trend": [
+                    {
+                        "version": "升级前",
+                        "invite_click_rate": referral["invite_click_rate_before_upgrade"],
+                    },
+                    {
+                        "version": "复杂升级后",
+                        "invite_click_rate": referral["invite_click_rate_after_complex_upgrade"],
+                    },
+                    {
+                        "version": "首屏简化实验组",
+                        "invite_click_rate": referral["invite_click_rate_treatment"],
+                    },
+                ],
+                "diagnostic_funnel": {
+                    "version": "复杂升级后",
+                    "page_visits": visits,
+                    "invite_clicks": round(
+                        visits * referral["invite_click_rate_after_complex_upgrade"]
+                    ),
+                    "share_successes": round(
+                        visits
+                        * referral["invite_click_rate_after_complex_upgrade"]
+                        * referral["share_success_rate"]
+                    ),
+                    "activation": None,
+                    "source_type": "derived_calculation",
+                    "boundary": "仅用于诊断阶段情景折算，不用于不同版本分享率比较。",
+                },
+                "experiment": referral_experiment,
+                "economics": {
+                    "released_ratio": referral["released_first_month_value_cost_ratio"],
+                    "external_same_scope_ratio": referral["external_same_scope_value_cost_ratio"],
+                    "label": "首月价值/激励成本倍数",
+                },
+                "incentive_reconstruction": {
+                    "before_index": referral["incentive_before_index"],
+                    "after_index": referral["incentive_after_index"],
+                    "disclosure": referral["incentive_disclosure"],
+                },
+            },
+            "replay": [
+                "监测邀请点击异常",
+                "定位邀请动作断点",
+                "用95%分享成功率形成负证据",
+                "提出页面发现成本假设",
+                "用随机实验验证首屏简化策略",
+                "以首月价值护栏形成后续迭代决策",
+            ],
+        },
+        {
+            "id": "new_user_retention",
+            "name": "新用户留存诊断",
+            "business_question": "投放新增用户留存下滑的主要来源是什么，哪些产品引导可改善早期回访？",
+            "primary_metric": "d1_7_window_retention",
+            "mechanism_metric": "follow_penetration",
+            "decision_metric": "d1_7_window_retention",
+            "data_boundary": "案例事实与模拟分解严格分层；实验绝对提升幅度未披露。",
+            "analysis_ids": ["analysis_retention_decline"],
+            "question_ids": [
+                "question_retention_structure",
+                "question_retention_path",
+                "question_retention_causality",
+                "question_retention_lift",
+            ],
+            "weekly_report_id": "weekly_retention",
+            "analysis_data": {
+                "retention_trend": [
+                    {
+                        "period": "异常前",
+                        "d1_7_window_retention": retention["d1_7_window_retention_before"],
+                    },
+                    {
+                        "period": "异常后",
+                        "d1_7_window_retention": retention["d1_7_window_retention_after"],
+                    },
+                ],
+                "device_structure": {
+                    "overall_decline_pp": 100
+                    * (
+                        retention["d1_7_window_retention_after"]
+                        - retention["d1_7_window_retention_before"]
+                    ),
+                    "tablet_retention_gap_pp": 100 * retention["tablet_retention_gap_absolute"],
+                    "tablet_share_direction": retention["tablet_share_direction"],
+                    "tablet_share_before": retention["tablet_share_before"],
+                    "tablet_share_after": retention["tablet_share_after"],
+                    "tablet_share_change": retention["tablet_share_change"],
+                    "structure_contribution_pp": None,
+                    "unexplained_residual_pp": None,
+                    "status": "missing_segment_share_change",
+                    "claim_boundary": "缺少分期设备占比，不能精确计算真实结构贡献。",
+                },
+                "path": {
+                    "steps": [
+                        "下载",
+                        "注册登录",
+                        "首页",
+                        "内容浏览",
+                        "互动",
+                        "博主主页",
+                        "关注",
+                    ],
+                    "result": retention["path_result"],
+                },
+                "benchmark": {
+                    "feature": "关注行为渗透率",
+                    "ratio": retention["benchmark_follow_penetration_ratio"],
+                    "evidence_type": "correlational",
+                },
+                "experiment": {
+                    "duration_days": retention["experiment_duration_days"],
+                    "total_sample": retention["experiment_total_sample"],
+                    "p_value_upper_bound": retention["experiment_p_value_upper_bound"],
+                    "control_rate": None,
+                    "treatment_rate": None,
+                    "absolute_lift": None,
+                    "status": "significant_lift_magnitude_not_public",
+                },
+                "synthetic_mix_shift_demo": mix_demo,
+            },
+            "replay": [
+                "监测次7日内留存率异常",
+                "按用户维度拆解",
+                "识别设备结构压力",
+                "标记占比变化缺口并限制结构归因强度",
+                "利用核心路径反向证据收敛问题范围",
+                "从标杆行为生成关注引导假设",
+                "用随机实验验证完整退出页引导策略",
+            ],
+        },
+    ]
+
+
+def _weekly_reports(
+    *,
+    narrative_mode: str,
+    evidence: list[EvidenceItem],
+    ollama_base_url: str,
+    ollama_model: str,
+    ollama_timeout_seconds: float,
+) -> list[dict[str, Any]]:
+    evidence_index = {item.id: item for item in evidence}
+    referral_ids = [
+        "ev_referral_version_trend",
+        "ev_referral_share_negative",
+        "ev_referral_experiment",
+        "ev_referral_value_cost",
+    ]
+    retention_ids = [
+        "ev_retention_trend",
+        "ev_retention_device_structure",
+        "ev_retention_path_negative",
+        "ev_retention_benchmark",
+        "ev_retention_experiment",
+    ]
+    referral_evidence = [evidence_index[item] for item in referral_ids]
+    retention_evidence = [evidence_index[item] for item in retention_ids]
+    referral_comparison = evidence_index["ev_referral_experiment"].values
+    retention_comparison = evidence_index["ev_retention_trend"].values
+    referral_narrative = generate_narrative(
+        mode=narrative_mode,
+        headline="邀请页面简化实验提升6.5pp，价值护栏支持持续迭代",
+        summary=(
+            "邀请点击率在复杂升级后由21%降至17%，而分享成功率约95%；"
+            "首屏简化实验将邀请点击率提升至23.5%，首月价值/激励成本倍数为2.18，高于同口径外投的1.90。"
+        ),
+        evidence=referral_evidence,
+        ollama_base_url=ollama_base_url,
+        ollama_model=ollama_model,
+        timeout_seconds=ollama_timeout_seconds,
+    )
+    retention_narrative = generate_narrative(
+        mode=narrative_mode,
+        headline="次7日内留存率下降7pp，设备结构量化仍缺分期占比",
+        summary=(
+            "次7日内留存率从48%降至41%；设备结构形成下行压力，但缺少分期占比，无法准确量化结构贡献。"
+            "核心路径转化率未同步下降形成反向证据，2.5倍关注渗透差异仅形成假设；退出页引导实验显著，绝对提升未公开。"
+        ),
+        evidence=retention_evidence,
+        ollama_base_url=ollama_base_url,
+        ollama_model=ollama_model,
+        timeout_seconds=ollama_timeout_seconds,
+    )
+    return [
+        {
+            "id": "weekly_referral",
+            "case_id": "referral_growth",
+            "report_mode": "fixed_rule_demo",
+            "period": "演示监控周 W02",
+            "previous_period": "演示监控周 W01",
+            "data_boundary": "固定规则的案例版本回放，不是公司真实自然周数据。",
+            "comparison": {
+                "basis": "复杂升级版本与首屏简化实验版本的案例事实对比",
+                "metric_id": "invite_click_rate",
+                "previous_value": referral_comparison["control_rate"],
+                "current_value": referral_comparison["treatment_rate"],
+                "absolute_change_pp": referral_comparison["absolute_lift_pp"],
+                "history_type": "case_replay_not_calendar_week",
+            },
+            "title": "老带新增长决策周报",
+            "headline": referral_narrative["headline"],
+            "kpis": [
+                {"metric_id": "invite_click_rate", "display": "17% → 23.5%"},
+                {"metric_id": "share_success_rate", "display": "约95%"},
+                {"metric_id": "first_month_value_cost_ratio", "display": "2.18 vs 1.90"},
+            ],
+            "anomalies": ["玩法升级后邀请点击率从约21%降至17%"],
+            "negative_evidence": [
+                "分享成功率约95%，现有证据不支持分享完成环节是主要断点，降低该方向排查优先级"
+            ],
+            "hypotheses": ["页面信息复杂且邀请入口后置可能提高动作发现成本"],
+            "experiment_status": (
+                "两周、总样本约700万；点击邀请率+6.5pp，高于+3pp MDE且p<0.05；"
+                "A/A、SRM与分层均衡的项目实际结果未披露"
+            ),
+            "recommendations": ["在首屏简化版本上持续迭代", "持续监控拉新结果和首月价值护栏"],
+            "limitations": ["实验识别完整组合策略", "首月价值/激励成本倍数不代表完整利润口径"],
+            "evidence_ids": referral_ids,
+            "narrative": referral_narrative,
+            "previous_snapshot": {
+                "period": "演示监控周 W01",
+                "title": "老带新增长诊断周报",
+                "headline": "复杂升级后邀请点击降至17%，进入首屏简化实验设计",
+                "kpis": [
+                    {"metric_id": "invite_click_rate", "display": "约21% → 17%"},
+                    {"metric_id": "share_success_rate", "display": "约95%"},
+                ],
+                "anomalies": ["玩法升级后邀请点击率从约21%降至17%"],
+                "negative_evidence": ["分享成功率约95%，现有证据不支持分享完成环节是主要断点"],
+                "hypotheses": ["页面信息复杂且邀请入口后置可能提高动作发现成本"],
+                "experiment_status": "已完成1:1分流与两周周期的实验方案设计",
+                "recommendations": [
+                    "运行首屏简化实验；过程监控护栏，不依据未经校正的中期p值提前停止"
+                ],
+                "limitations": ["阶段快照只回放案例推进顺序，不是公司真实自然周数据"],
+                "evidence_ids": ["ev_referral_version_trend", "ev_referral_share_negative"],
+                "narrative": {
+                    "mode": "deterministic",
+                    "status": "case_replay",
+                    "text": "该阶段先锁定邀请动作异常，再把页面发现成本转化为可验证假设。",
+                },
+            },
+        },
+        {
+            "id": "weekly_retention",
+            "case_id": "new_user_retention",
+            "report_mode": "fixed_rule_demo",
+            "period": "演示监控周 W02",
+            "previous_period": "演示监控周 W01",
+            "data_boundary": "固定规则的案例状态回放，不是公司真实自然周数据。",
+            "comparison": {
+                "basis": "异常前与异常后状态的案例事实对比",
+                "metric_id": "d1_7_window_retention",
+                "previous_value": retention_comparison["before_rate"],
+                "current_value": retention_comparison["after_rate"],
+                "absolute_change_pp": retention_comparison["absolute_change_pp"],
+                "history_type": "case_replay_not_calendar_week",
+            },
+            "title": "新用户留存诊断周报",
+            "headline": retention_narrative["headline"],
+            "kpis": [
+                {"metric_id": "d1_7_window_retention", "display": "48% → 41%"},
+                {"metric_id": "follow_penetration", "display": "标杆约2.5×"},
+            ],
+            "anomalies": ["次7日内留存率下降7pp"],
+            "negative_evidence": [
+                "主要产品路径转化未见明显下降，降低已检查路径存在普遍阻塞的排查优先级"
+            ],
+            "hypotheses": ["退出页主页与关注引导可能帮助建立持续内容关系"],
+            "experiment_status": "两周、约30万总样本、p<0.05；绝对提升幅度未披露",
+            "recommendations": [
+                "支持继续推进完整退出页引导策略",
+                "补齐分期设备占比后再做真实mix-shift归因",
+            ],
+            "limitations": [
+                "设备结构贡献因占比变化缺失而不可量化",
+                "2.5倍差异仅为相关性",
+                "不报告未披露的实验绝对效果量",
+            ],
+            "evidence_ids": retention_ids,
+            "narrative": retention_narrative,
+            "previous_snapshot": {
+                "period": "演示监控周 W01",
+                "title": "新用户留存初步诊断周报",
+                "headline": "次7日内留存下降7pp，完成分层与路径负证据检查",
+                "kpis": [
+                    {"metric_id": "d1_7_window_retention", "display": "48% → 41%"},
+                    {"metric_id": "device_retention_gap", "display": "平板约低10pp"},
+                ],
+                "anomalies": ["次7日内留存率由48%降至41%"],
+                "negative_evidence": [
+                    "主要产品路径转化未见明显下降，降低普遍路径阻塞方向的排查优先级"
+                ],
+                "hypotheses": ["设备结构形成方向性压力，但贡献仍需分期占比"],
+                "experiment_status": "标杆行为分析提供候选机制，相关性尚不能替代因果验证",
+                "recommendations": ["补齐分期设备占比；把主页浏览与关注线索交给随机实验"],
+                "limitations": ["设备结构贡献与未解释变化因输入缺失而不可计算"],
+                "evidence_ids": [
+                    "ev_retention_trend",
+                    "ev_retention_device_structure",
+                    "ev_retention_path_negative",
+                ],
+                "narrative": {
+                    "mode": "deterministic",
+                    "status": "case_replay",
+                    "text": "该阶段先确认结果下滑、结构压力方向和路径负证据，再寻找可干预行为。",
+                },
+            },
+        },
+    ]
+
+
+def build_copilot_payload(
+    *,
+    narrative_mode: str = "deterministic",
+    ollama_base_url: str = "http://127.0.0.1:11434",
+    ollama_model: str = "qwen2.5:7b",
+    ollama_timeout_seconds: float = 8.0,
+) -> dict[str, Any]:
+    if narrative_mode not in {"deterministic", "ollama"}:
+        raise ValueError("narrative_mode must be deterministic or ollama")
+    facts = load_source_facts()
+    referral_experiment = _referral_experiment(facts["referral"])
+    mix_demo = _synthetic_mix_shift(facts["synthetic_mix_shift_demo"])
+    evidence = _evidence(facts, referral_experiment, mix_demo)
+    claims = _claims()
+    claim_validation = validate_claims(claims, evidence)
+    if not claim_validation["passed"]:
+        raise ValueError(f"Copilot claim validation failed: {claim_validation['items']}")
+    weekly_reports = _weekly_reports(
+        narrative_mode=narrative_mode,
+        evidence=evidence,
+        ollama_base_url=ollama_base_url,
+        ollama_model=ollama_model,
+        ollama_timeout_seconds=ollama_timeout_seconds,
+    )
+    decisions = [
+        {
+            "id": "decision_referral_diagnosis",
+            "case_id": "referral_growth",
+            "title": "优先优化邀请入口，暂不进一步提高激励强度",
+            "status": "diagnosis_ready",
+            "summary": "邀请点击率由21%降至17%；分享成功率约95%，降低分享完成环节的排查优先级。",
+            "recommendation": "简化页面信息并把邀请入口前置，再用随机实验验证完整改版。",
+            "gate_status": "关键断点获得证据支持",
+            "evidence_ids": ["ev_referral_version_trend", "ev_referral_share_negative"],
+            "claim_ids": [],
+            "analysis_id": "analysis_referral_breakpoint",
+            "anomaly": "邀请点击率 21% → 17%",
+            "business_impact": "拉新链路的关键动作受阻",
+            "negative_evidence": "分享成功率约95%，降低分享完成环节的排查优先级",
+            "evidence_level": "趋势 + 漏斗负证据",
+            "residual": "页面复杂与按钮后置假设仍需实验识别",
+            "action": "进入首屏简化实验",
+        },
+        {
+            "id": "decision_referral_release",
+            "case_id": "referral_growth",
+            "title": "在首屏简化版本上持续迭代",
+            "status": "ship_with_monitoring",
+            "summary": "实验效果和首月价值护栏同时通过。",
+            "recommendation": "持续迭代并监控拉新结果、分享成功率、新用户质量与首月价值/激励成本倍数。",
+            "gate_status": {"statistical": True, "business": True, "guardrail": True},
+            "evidence_ids": ["ev_referral_experiment", "ev_referral_value_cost"],
+            "claim_ids": ["cl_referral_causal", "cl_referral_economics", "cl_referral_decision"],
+            "analysis_id": "analysis_referral_breakpoint",
+            "anomaly": "复杂升级后邀请点击率降至17%",
+            "business_impact": "需要同时恢复拉新动作并维持投入效率",
+            "negative_evidence": "首月口径不能外推为完整生命周期收益",
+            "evidence_level": "随机实验 + 同口径价值护栏",
+            "residual": "最终拉新结果与长期价值仍需持续观察",
+            "action": "在首屏简化版上持续迭代并滚动监控",
+        },
+        {
+            "id": "decision_retention_diagnosis",
+            "case_id": "new_user_retention",
+            "title": "设备结构形成下行压力，结构贡献仍待量化",
+            "status": "data_gap_visible",
+            "summary": "次7日内留存率由48%降至41%；平板新增占比方向上升，但缺少分期占比，无法准确量化结构贡献。",
+            "recommendation": "补齐分期设备占比后再做真实结构分解，同时继续检查可干预产品行为。",
+            "gate_status": "量化输入缺失",
+            "evidence_ids": [
+                "ev_retention_trend",
+                "ev_retention_device_structure",
+                "ev_retention_path_negative",
+            ],
+            "claim_ids": ["cl_retention_structure"],
+            "analysis_id": "analysis_retention_decline",
+            "anomaly": "次7日内留存率 48% → 41%",
+            "business_impact": "投放带来的新增用户回访下降",
+            "negative_evidence": "主要产品路径未见明显同步下滑",
+            "evidence_level": "方向性分层证据 + 数据缺口",
+            "residual": "真实结构贡献与未解释变化均不可计算",
+            "action": "补齐分期设备占比，并推进标杆行为分析",
+        },
+        {
+            "id": "decision_retention_guidance",
+            "case_id": "new_user_retention",
+            "title": "继续推进退出页主页与关注引导",
+            "status": "continue_with_monitoring",
+            "summary": "实验支持完整引导策略，但公开事实不足以量化绝对提升。",
+            "recommendation": "持续监控次7日内留存率、引导使用、主页访问、关注和分层异质性。",
+            "gate_status": {
+                "statistical": True,
+                "business": None,
+                "guardrail": None,
+            },
+            "evidence_ids": ["ev_retention_experiment", "ev_retention_benchmark"],
+            "claim_ids": ["cl_retention_causal", "cl_retention_unknown_lift"],
+            "analysis_id": "analysis_retention_decline",
+            "anomaly": "次7日内留存率下降7pp",
+            "business_impact": "识别并验证可干预的产品策略方向",
+            "negative_evidence": "2.5倍观察差异本身不构成因果",
+            "evidence_level": "随机实验（效果幅度未披露）",
+            "residual": "绝对提升、长期留存与分层异质性待观察",
+            "action": "继续优化完整引导策略并观察长期护栏",
+        },
+    ]
+    retention = facts["retention"]
+    experiment_defaults = {
+        "referral": {
+            "experiment_id": "referral_ui_simplification",
+            "baseline_rate": facts["referral"]["invite_click_rate_after_complex_upgrade"],
+            "treatment_rate": facts["referral"]["invite_click_rate_treatment"],
+            "mde_absolute": facts["referral"]["mde_absolute"],
+            "alpha": facts["referral"]["alpha"],
+            "power": facts["referral"]["power"],
+            "duration_days": facts["referral"]["experiment_duration_days"],
+            "total_sample": facts["referral"]["experiment_total_sample"],
+            "readout": referral_experiment,
+            "source_type": "experience_reconstruction",
+        },
+        "retention": {
+            "experiment_id": "creator_follow_guidance",
+            "baseline_rate": None,
+            "treatment_rate": None,
+            "absolute_lift": None,
+            "relative_lift": None,
+            "duration_days": retention["experiment_duration_days"],
+            "total_sample": retention["experiment_total_sample"],
+            "significance": "p < 0.05",
+            "status": "significant_lift_magnitude_not_public",
+            "refusal": "缺少实验组和对照组绝对留存率，不能计算绝对或相对提升。",
+            "source_type": "experience_fact",
+        },
+    }
+    payload = {
+        "meta": {
+            "product_name": "Liu Xi Growth Analytics Portfolio",
+            "version": "1.1.0",
+            "generated_at": f"{facts['as_of_date']}T00:00:00+08:00",
+            "snapshot_id": facts["snapshot_id"],
+            "active_mode": "static_pages" if narrative_mode == "deterministic" else "local_ai",
+            "available_modes": ["static_pages", "local_deterministic", "local_ollama"],
+            "narrative_mode": narrative_mode,
+            "data_boundary": facts["data_boundary"],
+            "calculation_boundary": "所有指标和统计量由确定性程序计算，叙事只读取证据。",
+        },
+        "decisions": decisions,
+        "questions": _questions(),
+        "analysis_threads": _analysis_threads(),
+        "weekly_reports": weekly_reports,
+        "cases": _case_payloads(facts, referral_experiment, mix_demo),
+        "experiment_defaults": experiment_defaults,
+        "metric_contracts": [item.model_dump(mode="json") for item in _metric_contracts()],
+        "evidence": [item.model_dump(mode="json") for item in evidence],
+        "claims": [item.model_dump(mode="json") for item in claims],
+    }
+    return normalize_public_numbers(payload)

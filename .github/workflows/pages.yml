@@ -1,0 +1,85 @@
+name: Generate briefing and deploy GitHub Pages
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+  schedule:
+    - cron: "0 9 * * 1"
+      timezone: "Asia/Shanghai"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install analysis engine
+        run: python -m pip install --upgrade pip && python -m pip install -e .
+      - name: Generate evidence package and weekly briefing
+        env:
+          LXGA_DEMO_USERS: "5000"
+          LXGA_DEMO_SEED: "42"
+          LXGA_COPILOT_NARRATIVE_MODE: deterministic
+        run: python -m scripts.export_copilot
+      - name: Enforce release-tree privacy policy
+        run: python -m scripts.build_release --check-only
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Configure repository-aware Pages base path
+        shell: bash
+        run: echo "VITE_BASE_PATH=/${{ github.event.repository.name }}/" >> "$GITHUB_ENV"
+      - name: Test and build the static Pages dashboard
+        working-directory: web
+        env:
+          VITE_API_BASE_URL: ""
+        run: npm ci && npm test && npm run lint && npm run typecheck && npm run build
+      - name: Preserve public analytics artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: liu-xi-growth-analytics-briefing
+          path: |
+            output/weekly-briefing.md
+            web/public/data/growth-analytics.json
+          if-no-files-found: error
+      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+        with:
+          enablement: true
+      - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
+        with:
+          path: web/dist
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
