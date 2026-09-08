@@ -1,5 +1,7 @@
 export function displayText(value: unknown) {
   return String(value ?? '')
+    .replaceAll('指标合同', '指标口径')
+    .replaceAll('智能分析', '分析链路')
     .replaceAll('次1至7日窗口留存率', '次7日内留存率')
     .replaceAll('次1至7日窗口留存', '次7日内留存')
     .replaceAll('首月价值成本比', '首月价值/激励成本倍数')

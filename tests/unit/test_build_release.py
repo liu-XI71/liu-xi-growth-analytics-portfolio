@@ -89,6 +89,16 @@ def test_keeps_safe_environment_templates_but_excludes_local_environment(tmp_pat
         assert "safe-template/web/.env.local" not in names
 
 
+def test_excludes_worktree_git_pointer_file(tmp_path: Path) -> None:
+    source = tmp_path / "worktree"
+    _write(source / "README.md")
+    local_value = "gitdir: " + "C:" + "/" + "Users" + "/example/project/.git/worktrees/release\n"
+    _write(source / ".git", local_value)
+    artifact = build_release(source, tmp_path / "release", release_name="worktree-source")
+    with zipfile.ZipFile(artifact.archive_path) as archive:
+        assert archive.namelist() == ["worktree-source/README.md"]
+
+
 def test_rejects_local_absolute_path_without_writing_outputs(tmp_path: Path) -> None:
     source = tmp_path / "portfolio"
     destination = tmp_path / "release"

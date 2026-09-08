@@ -27,4 +27,4 @@ def test_export_writes_static_payload_and_weekly_briefing(tmp_path) -> None:
     assert "新用户留存诊断周报" in weekly
     assert "无法准确量化结构贡献" in weekly
     assert sample_weekly == weekly
-    assert weekly.startswith("# 刘希｜增长分析与实验决策作品集 · 自动周报示例")
+    assert weekly.startswith("# 刘希｜增长与实验 · 自动周报示例")

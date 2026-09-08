@@ -1,78 +1,47 @@
-import { ArrowRight, CircleAlert, Lightbulb, Minus, ShieldCheck, Target, TrendingUp } from 'lucide-react'
+import { ArrowRight, ArrowUpRight, BookOpen, CheckCircle2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { Badge, CaseBadge, EvidencePanel, PageHeader, SectionHeader } from '../components'
-import { displayText } from '../copy'
-import type { CopilotData, DecisionItem, LoadedCopilot } from '../types'
+import { caseReadout, commonMethod, numberLabel, rateLabel } from '../case-model'
+import { PageHeader, SectionHeader } from '../components'
+import type { CopilotData, LoadedCopilot } from '../types'
 
-function detail(decision: DecisionItem, key: 'anomaly' | 'business_impact' | 'negative_evidence' | 'evidence_level' | 'residual' | 'action') {
-  if (decision[key]) return decision[key]
-  return key === 'action' ? decision.recommendation : '分析包未提供该字段'
-}
-
-function gateLabel(decision: DecisionItem) {
-  if (typeof decision.gate_status === 'string') return decision.gate_status
-  const gates = decision.gate_status
-  if (gates.statistical && gates.business && gates.guardrail) return '统计、业务与护栏条件通过'
-  if (gates.statistical) return '统计检验通过，部分决策条件未披露'
-  return '证据待继续回收'
-}
-
-function decisionQueue(data: CopilotData) {
-  return data.decisions.slice(0, 5)
-}
-
-export function DecisionPage({ data, source }: { data: CopilotData; source: LoadedCopilot['source'] }) {
-  const decisions = decisionQueue(data)
-  const linkedDecisions = decisions.filter((item) => item.evidence_ids.length).length
-  return (
-    <>
-      <PageHeader
-        eyebrow="LIU XI · GROWTH ANALYTICS PORTFOLIO"
-        title="从增长异常到可执行决策"
-        description="围绕老带新获客与新用户留存，呈现指标体系、结构化诊断、A/B 实验与价值评估的完整决策闭环。"
-        aside={<div className="freshness-card"><span className={`source-dot ${source}`} /><div><strong>{source === 'api' ? '本地接口链路已连接' : '公开快照已同步'}</strong><small>{source === 'api' ? '来源：FastAPI / 事实合同' : '来源：发布时生成的分析包'}</small></div></div>}
-      />
-
-      <section className="kpi-ribbon" aria-label="工作台摘要">
-        <div><span>业务案例</span><strong>{data.cases.length}</strong><small>增长 × 留存</small></div>
-        <div><span>预设业务问题</span><strong>{data.questions.length}</strong><small>都有分析链路</small></div>
-        <div><span>决策证据关联</span><strong>{linkedDecisions}/{decisions.length}</strong><small>每项均可追溯</small></div>
-        <div><span>分析闭环</span><strong>6 环节</strong><small>异常至持续监测</small></div>
-      </section>
-
-      <section className="content-section">
-        <SectionHeader label="DECISION PRIORITIES" title="增长决策优先级" description="每项决策统一呈现业务异常、影响范围、反向证据、证据等级、剩余不确定性与建议行动。" action={<Link className="text-link" to="/analysis">进入智能分析 <ArrowRight size={16} /></Link>} />
-        <div className="decision-grid">
-          {decisions.map((decision, index) => (
-            <article className="decision-card" key={decision.id}>
-              <div className="decision-card-top">
-                <div className="decision-index">0{index + 1}</div>
-                <div className="decision-tags"><CaseBadge caseId={decision.case_id} /><Badge tone={gateLabel(decision).includes('通过') || decision.status.includes('support') || decision.status.includes('ship') ? 'positive' : 'warning'}>{gateLabel(decision)}</Badge></div>
-              </div>
-              <h3>{displayText(decision.title)}</h3>
-              <p className="decision-summary">{displayText(decision.summary)}</p>
-              <dl className="decision-facts">
-                <div><dt><CircleAlert size={15} />异常</dt><dd>{displayText(detail(decision, 'anomaly'))}</dd></div>
-                <div><dt><TrendingUp size={15} />业务影响</dt><dd>{displayText(detail(decision, 'business_impact'))}</dd></div>
-                <div><dt><Minus size={15} />负证据</dt><dd>{displayText(detail(decision, 'negative_evidence'))}</dd></div>
-                <div><dt><ShieldCheck size={15} />证据等级</dt><dd>{displayText(detail(decision, 'evidence_level'))}</dd></div>
-                <div className="residual"><dt><Lightbulb size={15} />未决问题</dt><dd>{displayText(detail(decision, 'residual'))}</dd></div>
-              </dl>
-              <div className="decision-action"><Target size={18} aria-hidden="true" /><div><span>建议行动</span><strong>{displayText(detail(decision, 'action'))}</strong></div></div>
-              <EvidencePanel compact evidenceIds={decision.evidence_ids} evidence={data.evidence} />
-              <Link className="card-link" to={`/analysis?question=${encodeURIComponent(decision.analysis_id)}`}>查看分析链路 <ArrowRight size={15} /></Link>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="method-strip content-section">
-        <SectionHeader label="REUSABLE METHOD" title="两个增长场景，一套可复用决策框架" description="通过指标口径、诊断拆解、因果验证与价值约束，在证据范围内形成可执行结论。" />
-        <ol className="method-flow">
-          {['看板发现异常', '指标合同统一口径', '分层 / 漏斗定位', '反向证据收敛范围', '实验识别策略效果', '价值护栏与复盘'].map((item, index) => <li key={item}><span>{index + 1}</span><strong>{item}</strong></li>)}
-        </ol>
-        <div className="method-outcome"><strong>方法输出</strong><span>形成可复核的决策闭环：证据 → 边界 → 行动 → 持续监测。</span></div>
-      </section>
-    </>
-  )
+export function DecisionPage({ data }: { data: CopilotData; source: LoadedCopilot['source'] }) {
+  const referral = caseReadout(data, 'referral')
+  const retention = caseReadout(data, 'retention')
+  const lift = referral.control !== null && referral.treatment !== null ? (referral.treatment - referral.control) * 100 : null
+  return <>
+    <PageHeader eyebrow="LIU XI · GROWTH & EXPERIMENTS" title="从业务问题到增长决策" description="两段用户增长与留存实习，一套从指标拆解、诊断定位到实验评估的方法。重点呈现分析目的、判断依据与策略推进过程。" aside={<Link className="primary-button" to="/cases/referral">开始浏览案例 <ArrowRight size={16} /></Link>} />
+    <div className="participation-note"><CheckCircle2 size={18} /><p><strong>个人参与</strong> 在 mentor 带领下参与指标梳理与看板监测、分层与漏斗分析、策略反馈、实验设计与结果评估；本作品将项目分析方法沉淀为可交互案例。</p></div>
+    <section className="case-showcase content-section" aria-label="两段实习案例">
+      <article className="showcase-card growth">
+        <div className="showcase-kicker"><span>CASE 01</span><span>字节跳动 · 红果业务线 · 用户增长</span></div>
+        <h2>老带新：从邀请断点<br />到页面简化实验</h2>
+        <p>外部拉新供给承压，激励升级后邀请点击反而下降。先定位用户动作断点，再验证页面改版，最后检查新增价值能否覆盖激励投入。</p>
+        <div className="showcase-metrics"><div><span>邀请点击率 · 实验对照</span><strong>{rateLabel(referral.control)} <i>→</i> {rateLabel(referral.treatment)}</strong><small>组间提升 {numberLabel(lift, 1)} 个百分点</small></div><div><span>首月价值 / 激励成本</span><strong>{numberLabel(referral.valueRatio)}</strong><small>同口径外投基准 {numberLabel(referral.externalRatio)}</small></div></div>
+        <ol className="case-mini-chain"><li>漏斗定位</li><li>产品反馈</li><li>随机实验</li><li>价值评估</li></ol>
+        <Link className="primary-button" to="/cases/referral">查看老带新案例 <ArrowRight size={16} /></Link>
+      </article>
+      <article className="showcase-card retention">
+        <div className="showcase-kicker"><span>CASE 02</span><span>小红书 · 新用户留存</span></div>
+        <h2>留存：从人群结构<br />到关注引导实验</h2>
+        <p>投放新增用户回访不足。先区分人群结构与路径体验，再从标杆用户行为中提出产品假设，以实验评估主页与关注引导策略。</p>
+        <div className="showcase-metrics"><div><span>次 7 日内留存 · 监控变化</span><strong>{rateLabel(retention.before)} <i>→</i> {rateLabel(retention.after)}</strong><small>异常识别，不是实验组间对比</small></div><div><span>标杆 / 非标杆关注渗透</span><strong>{numberLabel(retention.benchmarkRatio)} 倍</strong><small>形成假设，后续实验评估策略</small></div></div>
+        <ol className="case-mini-chain"><li>用户分层</li><li>路径排查</li><li>标杆分析</li><li>因果验证</li></ol>
+        <Link className="primary-button" to="/cases/retention">查看新用户留存案例 <ArrowRight size={16} /></Link>
+      </article>
+    </section>
+    <section className="method-strip content-section">
+      <SectionHeader label="ONE REUSABLE FRAMEWORK" title="两个业务场景，共用一套判断标准" description="从业务目标出发，把描述现象、解释原因和验证策略分开处理。" />
+      <ol className="case-method-flow">{commonMethod.map((item, index) => <li key={item.title}><span>0{index + 1}</span><strong>{item.title}</strong><p>{item.description}</p></li>)}</ol>
+      <Link className="method-more" to="/methods">查看指标与实验方法 <ArrowRight size={16} /></Link>
+    </section>
+    <section className="content-section">
+      <SectionHeader label="ANALYTICAL JUDGEMENT" title="三项关键业务判断" />
+      <div className="common-capability"><div><strong>01</strong><h3>区分人群结构与组内表现</h3><p>整体留存是各类用户留存的加权结果。先观察人群占比和组内表现，再判断结构与产品因素。</p></div><div><strong>02</strong><h3>区分行为相关性与策略因果</h3><p>高频高时用户更常关注博主，仍需排查先验意愿和行为暴露差异，再验证引导策略。</p></div><div><strong>03</strong><h3>结合统计效果与业务约束</h3><p>邀请点击提升后仍要观察最终拉新与新用户质量，并使用同窗口、同成本范围的价值比较。</p></div></div>
+    </section>
+    <section className="content-section">
+      <SectionHeader label="REUSABLE TOOLS" title="从案例方法，到可复用工具" description="此处聚焦实习业务分析。重复数据分析与客户运营，分别由两项独立工具承接。" action={<a className="text-link" href={`${import.meta.env.BASE_URL}collection.html`}>查看全部作品 <ArrowUpRight size={15} /></a>} />
+      <div className="tool-links"><a href="https://liu-xi71.github.io/liu-xi-csv-analyst/"><BookOpen size={22} /><div><strong>CSV分析工作台</strong><p>导入新数据、确认口径、复算分析、导出报告。</p></div><ArrowUpRight size={18} /></a><a href="https://liu-xi71.github.io/liu-xi-evidence-analytics/"><BookOpen size={22} /><div><strong>复购运营台</strong><p>订单接入、客户分层、名单选择与策略验证。</p></div><ArrowUpRight size={18} /></a></div>
+    </section>
+    <details className="case-disclosure content-section"><summary>数据来源与展示范围</summary><p>{data.meta.data_boundary} 图中明确区分监控前后变化与实验组间比较。行级演示、结构分解示例与可编辑试算不代表企业生产记录。</p><Link className="text-link" to="/evidence">查看指标口径与证据 <ArrowRight size={15} /></Link></details>
+  </>
 }

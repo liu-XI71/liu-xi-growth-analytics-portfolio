@@ -140,7 +140,7 @@ jobs:
           frontend = json.loads(Path("/tmp/frontend-bundle.json").read_text(encoding="utf-8"))
           assert health["status"] == "ok"
           assert backend == frontend
-          assert backend["meta"]["product_name"] == "Liu Xi Growth Analytics Portfolio"
+          assert backend["meta"]["product_name"] == "Liu Xi Growth & Experiments"
           assert "evals" not in backend
           assert "<div id=\"root\"></div>" in Path("/tmp/index.html").read_text(encoding="utf-8")
           PY

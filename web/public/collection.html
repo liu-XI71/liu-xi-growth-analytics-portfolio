@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="刘希的数据分析作品集：增长与实验、CSV分析工作台、复购运营台。业务判断、分析复用与运营行动。">
+  <meta name="theme-color" content="#163e43">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23163e43'/%3E%3Ctext x='32' y='41' text-anchor='middle' fill='white' font-family='sans-serif' font-size='28'%3ELX%3C/text%3E%3C/svg%3E">
+  <title>刘希｜数据分析作品集</title>
+  <style>
+    :root{font-family:Inter,"Segoe UI","Microsoft YaHei",sans-serif;color:#193a40;background:#f3f6f5;font-synthesis:none;--muted:#526b70;--line:#d9e4e2;--accent:#176e66;--paper:#fff;--ink:#163e43}
+    *{box-sizing:border-box}body{margin:0;font-size:15px;line-height:1.8}a{color:var(--accent);text-underline-offset:4px}a:hover{text-decoration-thickness:2px}a:focus-visible{outline:3px solid #c17b1f;outline-offset:5px;border-radius:4px}.skip{position:absolute;left:20px;top:-100px;background:#fff;padding:10px;z-index:10}.skip:focus{top:10px}
+    .wrap{max-width:1230px;padding:0 32px;margin:auto}.topbar{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:26px 0}.brand{display:flex;align-items:center;gap:12px;font-weight:750;color:var(--ink);text-decoration:none}.monogram{width:37px;height:37px;display:grid;place-items:center;border-radius:11px;background:var(--ink);color:#fff;font-size:14px}.topbar nav{display:flex;gap:22px;font-size:13px}.topbar nav a{text-decoration:none}
+    .hero{padding:42px 46px 38px;background:var(--ink);border-radius:23px;color:#fff;position:relative;overflow:hidden}.eyebrow{font-size:11px;letter-spacing:2.2px;font-weight:750;color:#add9c9}.hero h1{font-size:40px;line-height:1.3;margin:17px 0}.hero p{font-size:17px;color:#d1e3df;margin:0;max-width:830px}.capabilities{display:flex;flex-wrap:wrap;gap:10px;margin-top:28px}.capabilities span{font-size:13px;border:1px solid #587e78;padding:4px 14px;border-radius:30px}
+    .section-head{display:flex;justify-content:space-between;align-items:baseline;gap:20px;margin:32px 0 15px}.section-head h2{font-size:21px;margin:0}.section-head p{margin:0;color:var(--muted);font-size:13px}.projects{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}.project{background:var(--paper);border:1px solid var(--line);border-radius:18px;padding:25px;display:flex;flex-direction:column}.project:first-child{border-top:4px solid var(--accent);padding-top:22px}.project-tag{display:flex;align-items:center;justify-content:space-between;font-size:11px;font-weight:750;letter-spacing:1px;color:var(--accent)}.project-tag span:last-child{font-weight:500;letter-spacing:0;color:var(--muted)}.project h3{font-size:25px;line-height:1.45;margin:18px 0 10px}.project .summary{color:var(--muted);font-size:14px;margin:0 0 16px;min-height:76px}.project dl{margin:0 0 24px;font-size:13px}.project dt{font-weight:750;margin:13px 0 4px}.project dd{margin:0;color:var(--muted)}.deliverable{padding:13px 15px;background:#f1f6f4;border-radius:9px;margin-top:4px!important;color:#294d4e!important}.project .actions{margin-top:auto}.button{display:block;padding:11px 16px;border-radius:9px;background:var(--accent);color:#fff;text-align:center;text-decoration:none;font-weight:650;font-size:14px;transition:background .15s}.button:hover{background:#12574f}.secondary{display:flex;justify-content:space-between;gap:12px;margin-top:14px;font-size:12px}.boundary{font-size:11px;color:var(--muted);margin:16px 0 0;line-height:1.7;min-height:38px}
+    .reading{display:grid;grid-template-columns:1.1fr 1fr;gap:28px;padding:28px 32px;margin:28px 0;background:#e8f0ec;border:1px solid var(--line);border-radius:16px}.reading h2{font-size:21px;margin:0 0 8px}.reading p{font-size:14px;color:var(--muted);margin:0}.reading ol{padding-left:21px;margin:0;font-size:13px}.reading li{padding-left:3px;margin:5px 0}.downloads{display:flex;justify-content:space-between;align-items:center;gap:24px;border-top:1px solid var(--line);padding:23px 0}.downloads h2{font-size:18px;margin:0}.downloads p{font-size:12px;color:var(--muted);margin:3px 0 0}.download-link{white-space:nowrap;background:#fff;border:1px solid #b8d0c8;padding:9px 20px;border-radius:9px;text-decoration:none;font-size:13px;font-weight:650}footer{color:var(--muted);font-size:11px;border-top:1px solid var(--line);padding:20px 0 30px}footer p{margin:0 0 5px}
+    @media(max-width:920px){.projects{grid-template-columns:1fr}.project .summary,.boundary{min-height:0}.project dl{display:grid;grid-template-columns:80px 1fr;gap:10px 15px}.project dt{margin:0}.project .deliverable{margin:0!important}.reading{grid-template-columns:1fr}.topbar nav{gap:13px}}
+    @media(max-width:540px){.wrap{padding:0 17px}.topbar{padding:18px 0}.topbar nav a:last-child{display:none}.hero{padding:29px 24px}.hero h1{font-size:29px}.hero p{font-size:15px}.section-head{display:block}.section-head p{margin-top:4px}.project{padding:23px}.project:first-child{padding-top:20px}.reading{padding:23px}.downloads{display:block}.download-link{display:inline-block;margin-top:14px}.project dl{grid-template-columns:1fr;gap:3px}.project dt{margin-top:11px}}
+    @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+  </style>
+</head>
+<body>
+  <a class="skip" href="#projects">跳到作品</a>
+  <div class="wrap">
+    <header class="topbar">
+      <a class="brand" href="collection.html" aria-label="刘希数据分析作品集首页"><span class="monogram" aria-hidden="true">LX</span><span>刘希 · 数据分析</span></a>
+      <nav aria-label="作品集导航"><a href="#projects">三项作品</a><a href="#downloads">完整下载</a><a href="https://github.com/liu-XI71">GitHub</a></nav>
+    </header>
+    <main>
+      <section class="hero" aria-labelledby="headline">
+        <div class="eyebrow">LIU XI · BUSINESS ANALYTICS</div>
+        <h1 id="headline">业务判断，分析复用，运营行动。</h1>
+        <p>两段增长与留存案例，一套分析方法，以及两个可实际操作的业务工具。</p>
+        <div class="capabilities" aria-label="分析能力"><span>指标口径</span><span>问题诊断</span><span>实验评估</span><span>流程自动化</span><span>行动验证</span></div>
+      </section>
+      <div class="section-head"><h2 id="projects">作品与工具</h2><p>建议从业务案例开始，再体验数据导入与结果导出。</p></div>
+      <section class="projects" aria-label="按建议顺序排列的三个项目">
+        <article class="project">
+          <div class="project-tag"><span>01 / GROWTH & EXPERIMENTS</span><span>主作品</span></div>
+          <h3>增长与实验</h3>
+          <p class="summary">围绕老带新与新用户留存，呈现指标拆解、原因定位、策略验证与价值约束。</p>
+          <dl><dt>业务问题</dt><dd>增长瓶颈在哪里？产品策略是否值得推进？</dd><dt>分析链路</dt><dd>业务目标 → 指标口径 → 分层与漏斗 → 实验 → 决策。</dd><dt>查看产物</dt><dd class="deliverable">两类业务复盘、指标体系、实验设计与分析依据。</dd></dl>
+          <div class="actions"><a class="button" data-project="growth" href="./#/">查看业务案例</a><div class="secondary"><a href="https://github.com/liu-XI71/liu-xi-growth-analytics-portfolio">源码与说明</a><a href="https://github.com/liu-XI71/liu-xi-growth-analytics-portfolio/releases/download/v1.2.0/Liu-Xi-Growth-Experiments-v1.2.0.zip">下载完整项目</a></div><p class="boundary">个人经历复盘与合成计算示例分别标注，不包含雇主生产数据。</p></div>
+        </article>
+        <article class="project">
+          <div class="project-tag"><span>02 / REUSABLE ANALYSIS</span><span>分析工具</span></div>
+          <h3>CSV分析工作台</h3>
+          <p class="summary">导入适用的 CSV，确认分析口径、诊断结构差异，再用相同配置完成新批次重跑。</p>
+          <dl><dt>业务问题</dt><dd>如何减少同类转化、留存与实验分析的重复操作？</dd><dt>操作链路</dt><dd>导入 → 口径确认 → 诊断 → 导出 → 换数复用。</dd><dt>下载产物</dt><dd class="deliverable">图文报告、分析配置与同口径批次对照结果。</dd></dl>
+          <div class="actions"><a class="button" data-project="csv" href="https://liu-xi71.github.io/liu-xi-csv-analyst/">导入 CSV 并分析</a><div class="secondary"><a href="https://github.com/liu-XI71/liu-xi-csv-analyst">源码与说明</a><a href="https://github.com/liu-XI71/liu-xi-csv-analyst/releases/download/v1.2.0/Liu-Xi-CSV-Analyst-v1.2.0.zip">下载完整项目</a></div><p class="boundary">适用于二项转化、用户级留存与实验明细。基础分析不依赖模型服务。</p></div>
+        </article>
+        <article class="project">
+          <div class="project-tag"><span>03 / REPURCHASE OPERATIONS</span><span>运营工具</span></div>
+          <h3>复购运营台</h3>
+          <p class="summary">从订单数据出发，确定客户分群与候选名单，并制定成本约束下的运营验证计划。</p>
+          <dl><dt>业务问题</dt><dd>应优先运营哪些客户？怎样验证行动效果？</dd><dt>操作链路</dt><dd>订单导入 → 交易口径 → 分群 → 名单 → 留出计划。</dd><dt>下载产物</dt><dd class="deliverable">历史客户特征、候选名单与效果验证计划。</dd></dl>
+          <div class="actions"><a class="button" data-project="repurchase" href="https://liu-xi71.github.io/liu-xi-evidence-analytics/">进入复购运营</a><div class="secondary"><a href="https://github.com/liu-XI71/liu-xi-evidence-analytics">源码与说明</a><a href="https://github.com/liu-XI71/liu-xi-evidence-analytics/releases/download/v1.2.0/Liu-Xi-Repurchase-Operations-v1.2.0.zip">下载完整项目</a></div><p class="boundary">名单只使用截止日前信息。历史自然复购不等于营销增量。</p></div>
+        </article>
+      </section>
+      <section class="reading" aria-labelledby="reading-title"><div><h2 id="reading-title">三分钟浏览路线</h2><p>先看业务判断，再验证工具能否改变输入、重新计算并交付结果。</p></div><ol><li><strong>第一分钟：</strong>查看增长与留存案例的关键判断及实验依据。</li><li><strong>第二分钟：</strong>运行 CSV 示例，保存口径、重跑另一批数据并导出报告。</li><li><strong>第三分钟：</strong>导入订单或查看公开示例，生成候选名单与验证计划。</li></ol></section>
+      <section class="downloads" id="downloads"><div><h2>完整作品集</h2><p>三个项目、中文使用说明、代码与数据来源。各项目独立运行，统一入口浏览。</p></div><a class="download-link" data-collection-download href="https://github.com/liu-XI71/liu-xi-growth-analytics-portfolio/releases/download/v1.2.0/Liu-Xi-Analytics-Collection-v1.2.0.zip">下载三项目总包 · v1.2.0</a></section>
+    </main>
+    <footer><p>刘希｜数据分析作品集 · v1.2.0</p><p>个人经历、公开数据及合成示例依各项目说明使用。代码许可证与数据归属保留在对应仓库。</p></footer>
+  </div>
+</body>
+</html>

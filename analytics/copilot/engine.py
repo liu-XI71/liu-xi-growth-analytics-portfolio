@@ -1282,8 +1282,8 @@ def build_copilot_payload(
     }
     payload = {
         "meta": {
-            "product_name": "Liu Xi Growth Analytics Portfolio",
-            "version": "1.1.0",
+            "product_name": "Liu Xi Growth & Experiments",
+            "version": "1.2.0",
             "generated_at": f"{facts['as_of_date']}T00:00:00+08:00",
             "snapshot_id": facts["snapshot_id"],
             "active_mode": "static_pages" if narrative_mode == "deterministic" else "local_ai",

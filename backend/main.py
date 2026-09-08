@@ -18,8 +18,8 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(
-    title="Liu Xi Growth Analytics Portfolio API",
-    version="1.1.0",
+    title="Liu Xi Growth & Experiments API",
+    version="1.2.0",
     description=(
         "Evidence-bound API for growth diagnosis, metric contracts, experiment decisions and "
         "deterministic weekly reports. Case facts are de-identified; operational datasets are "

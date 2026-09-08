@@ -3,8 +3,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-PROJECT_NAME = "Liu Xi Growth Analytics Portfolio"
-PROJECT_NAME_ZH = "刘希｜增长分析与实验决策作品集"
+PROJECT_NAME = "Liu Xi Growth & Experiments"
+PROJECT_NAME_ZH = "刘希｜增长与实验"
 
 
 def _case_registry() -> pd.DataFrame:

@@ -372,7 +372,7 @@ PLAYBOOKS: dict[str, dict[str, Any]] = {
 
 def framework() -> dict[str, Any]:
     return {
-        "name": "Liu Xi Growth Analytics Portfolio",
+        "name": "Liu Xi Growth & Experiments",
         "description": "A reusable analytical workflow from a governed goal to trustworthy evidence, causal testing and an economically defensible decision.",
         "stages": STAGES,
         "evidence_ladder": EVIDENCE_LADDER,

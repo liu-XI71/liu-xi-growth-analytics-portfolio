@@ -28,7 +28,7 @@ def test_public_payload_is_complete_and_governed() -> None:
         "evidence",
         "claims",
     } <= payload.keys()
-    assert payload["meta"]["version"] == "1.1.0"
+    assert payload["meta"]["version"] == "1.2.0"
     assert payload["meta"]["narrative_mode"] == "deterministic"
     assert "evals" not in payload
     for report in payload["weekly_reports"]:

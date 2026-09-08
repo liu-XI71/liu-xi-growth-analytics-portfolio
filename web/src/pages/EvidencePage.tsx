@@ -74,14 +74,14 @@ export function EvidencePage({ data }: { data: CopilotData }) {
     <>
       <PageHeader eyebrow="METRIC & EVIDENCE REGISTRY · 口径治理" title="指标口径统一，分析结论可追溯" description="集中管理分子、分母、观察窗口、统计粒度、证据来源与适用边界，降低口径漂移和过度归因风险。" />
       <section className="evidence-summary content-section">
-        <div><span>指标合同</span><strong>{data.metric_contracts.length}</strong><small>核心 / 机制 / 护栏</small></div>
+        <div><span>指标口径</span><strong>{data.metric_contracts.length}</strong><small>核心 / 机制 / 护栏</small></div>
         <div><span>证据记录</span><strong>{data.evidence.length}</strong><small>每条都有独立ID</small></div>
         <div><span>证据层级</span><strong>4 类</strong><small>事实 / 推断 / 实验 / 决策</small></div>
         <div className="safety-promise"><ShieldCheck size={22} /><p><strong>结论治理原则</strong><span>相关性与因果性分层表达；缺失数据不进行无依据量化。</span></p></div>
       </section>
 
       <section className="evidence-toolbar content-section">
-        <div className="registry-tabs" role="tablist"><button type="button" role="tab" aria-selected={tab === 'contracts'} className={tab === 'contracts' ? 'active' : ''} onClick={() => setTab('contracts')}>指标合同</button><button type="button" role="tab" aria-selected={tab === 'evidence'} className={tab === 'evidence' ? 'active' : ''} onClick={() => setTab('evidence')}>证据账本</button></div>
+        <div className="registry-tabs" role="tablist"><button type="button" role="tab" aria-selected={tab === 'contracts'} className={tab === 'contracts' ? 'active' : ''} onClick={() => setTab('contracts')}>指标口径</button><button type="button" role="tab" aria-selected={tab === 'evidence'} className={tab === 'evidence' ? 'active' : ''} onClick={() => setTab('evidence')}>证据账本</button></div>
         <label className="search-box"><Search size={18} /><span className="sr-only">搜索</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索指标、证据ID或业务结论" /></label>
         {tab === 'evidence' && <div className="filter-row"><label><span className="sr-only">案例</span><select value={caseFilter} onChange={(event) => setCaseFilter(event.target.value)}><option value="all">全部案例</option>{data.cases.map((item) => <option key={item.id} value={item.id}>{item.id.includes('referral') ? '老带新增长' : '新用户留存'}</option>)}</select></label><label><span className="sr-only">证据类型</span><select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}><option value="all">全部证据类型</option>{evidenceTypes.map((type) => <option key={type} value={type}>{evidenceTypeLabel(type)}</option>)}</select></label></div>}
       </section>

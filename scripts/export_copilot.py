@@ -24,7 +24,7 @@ def _write_text(path: Path, content: str) -> None:
 def _render_weekly_briefing(payload: dict[str, Any]) -> str:
     meta = payload["meta"]
     lines = [
-        "# 刘希｜增长分析与实验决策作品集 · 自动周报示例",
+        "# 刘希｜增长与实验 · 自动周报示例",
         "",
         f"- 快照：`{meta['snapshot_id']}`",
         f"- 生成时间：`{meta['generated_at']}`",

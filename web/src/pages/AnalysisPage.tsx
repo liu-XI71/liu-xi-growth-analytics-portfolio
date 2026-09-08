@@ -7,8 +7,8 @@ import { displayText } from '../copy'
 import type { AnalysisStep, CopilotData } from '../types'
 
 const typeNames: Record<string, string> = {
-  question: '问题', contract: '指标合同', analysis: '确定性分析', chart: '图表', negative_evidence: '负证据', hypothesis: '假设', experiment: '实验 / 价值', boundary: '结论边界',
-  metric_definition: '指标合同', trend: '趋势定位', mix_shift: '结构分解', benchmark: '标杆分析', decision: '价值与决策',
+  question: '问题', contract: '指标口径', analysis: '确定性分析', chart: '图表', negative_evidence: '反向证据', hypothesis: '假设', experiment: '实验 / 价值', boundary: '结论边界',
+  metric_definition: '指标口径', trend: '趋势定位', mix_shift: '结构分解', benchmark: '标杆分析', decision: '价值与决策',
 }
 
 function toneFor(type: string) {
@@ -55,7 +55,7 @@ export function AnalysisPage({ data }: { data: CopilotData }) {
   if (!question || !thread || !current) return null
   return (
     <>
-      <PageHeader eyebrow="EVIDENCE-BASED ANALYSIS · 结构化诊断" title="基于证据约束的智能分析" description="围绕业务问题依次呈现指标定义、确定性计算、反向证据、可检验假设与结论边界；智能解释仅组织已验证证据，不生成业务数值。" />
+      <PageHeader eyebrow="ANALYSIS WORKFLOW · 结构化诊断" title="从业务问题展开分析链路" description="选择问题，依次查看指标口径、计算证据、诊断判断、策略假设与适用范围。" />
       <section className="analysis-workbench content-section">
         <aside className="question-rail" aria-label="预设业务问题">
           <div className="rail-title"><span>选择业务问题</span><small>{data.questions.length} 个已配置问题</small></div>

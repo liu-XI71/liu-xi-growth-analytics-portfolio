@@ -57,6 +57,7 @@ EXCLUDED_DIRECTORY_NAMES = frozenset(
 )
 EXCLUDED_FILE_NAMES = frozenset(
     {
+        ".git",
         ".coverage",
         ".ds_store",
         "coverage.xml",

@@ -11,6 +11,8 @@ const WeeklyReportPage = lazy(async () => ({ default: (await import('./pages/Wee
 const ReplayPage = lazy(async () => ({ default: (await import('./pages/ReplayPage')).ReplayPage }))
 const ExperimentCopilotPage = lazy(async () => ({ default: (await import('./pages/ExperimentCopilotPage')).ExperimentCopilotPage }))
 const EvidencePage = lazy(async () => ({ default: (await import('./pages/EvidencePage')).EvidencePage }))
+const CaseStudyPage = lazy(async () => ({ default: (await import('./pages/CaseStudyPage')).CaseStudyPage }))
+const MethodPage = lazy(async () => ({ default: (await import('./pages/MethodPage')).MethodPage }))
 
 function ScrollToTop() {
   const { key, pathname } = useLocation()
@@ -32,9 +34,9 @@ export default function App() {
 
   if (loadFailed) return (
     <main className="data-load-error">
-      <span>数据保护模式</span>
-      <h1>分析包暂时无法读取</h1>
-      <p>系统没有使用手写数字或猜测结果替代真实分析包。请确认本地 API 已启动，或重新加载已发布的静态快照。</p>
+      <span>加载提示</span>
+      <h1>案例数据加载失败</h1>
+      <p>请检查网络连接后重试。本地部署请确认服务已启动、data/growth-analytics.json 文件可访问；不要直接双击源码中的 index.html。</p>
       <button type="button" onClick={() => window.location.reload()}>重新加载</button>
     </main>
   )
@@ -46,6 +48,9 @@ export default function App() {
       <Suspense fallback={<div className="route-loading"><div className="loader" /><span>正在展开业务工作区…</span></div>}>
         <Routes>
           <Route path="/" element={<DecisionPage data={data} source={source} />} />
+          <Route path="/cases/referral" element={<CaseStudyPage data={data} caseKey="referral" />} />
+          <Route path="/cases/retention" element={<CaseStudyPage data={data} caseKey="retention" />} />
+          <Route path="/methods" element={<MethodPage />} />
           <Route path="/analysis" element={<AnalysisPage data={data} />} />
           <Route path="/weekly" element={<WeeklyReportPage data={data} />} />
           <Route path="/replay" element={<ReplayPage data={data} />} />

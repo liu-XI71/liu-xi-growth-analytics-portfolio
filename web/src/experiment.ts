@@ -29,6 +29,7 @@ function inverseNormal(probability: number) {
 
 export function sampleSizePerArm({ baseline, mde, alpha, power }: ExperimentInputs) {
   const treatment = baseline + mde
+  if (![baseline, mde, alpha, power].every(Number.isFinite)) return null
   if (baseline <= 0 || treatment >= 1 || mde <= 0 || alpha <= 0 || alpha >= 1 || power <= 0 || power >= 1) return null
   const pooled = (baseline + treatment) / 2
   const zAlpha = inverseNormal(1 - alpha / 2)
@@ -39,7 +40,7 @@ export function sampleSizePerArm({ baseline, mde, alpha, power }: ExperimentInpu
 
 export function recommendedDuration(inputs: ExperimentInputs) {
   const perArm = sampleSizePerArm(inputs)
-  if (!perArm || inputs.dailyTraffic <= 0) return null
+  if (!perArm || !Number.isSafeInteger(inputs.dailyTraffic) || inputs.dailyTraffic <= 0) return null
   const statisticalDays = Math.max(1, Math.ceil((perArm * 2) / inputs.dailyTraffic))
   const fullCycleDays = Math.ceil(statisticalDays / 7) * 7
   return { perArm, total: perArm * 2, statisticalDays, fullCycleDays }
@@ -65,18 +66,20 @@ function normalCdf(value: number) {
 }
 
 export function twoProportionTest(controlSuccess: number, controlN: number, treatmentSuccess: number, treatmentN: number) {
-  if (controlN <= 0 || treatmentN <= 0) return null
+  if (![controlSuccess, controlN, treatmentSuccess, treatmentN].every(Number.isSafeInteger)) return null
+  if (controlN <= 0 || treatmentN <= 0 || controlSuccess < 0 || treatmentSuccess < 0 || controlSuccess > controlN || treatmentSuccess > treatmentN) return null
   const pControl = controlSuccess / controlN
   const pTreatment = treatmentSuccess / treatmentN
   const pooled = (controlSuccess + treatmentSuccess) / (controlN + treatmentN)
   const standardError = Math.sqrt(pooled * (1 - pooled) * (1 / controlN + 1 / treatmentN))
-  if (!standardError || pControl <= 0) return null
+  if (!standardError) return null
   const z = (pTreatment - pControl) / standardError
   const pValue = 2 * (1 - normalCdf(Math.abs(z)))
-  return { pControl, pTreatment, lift: pTreatment - pControl, relativeLift: (pTreatment - pControl) / pControl, z, pValue }
+  return { pControl, pTreatment, lift: pTreatment - pControl, relativeLift: pControl > 0 ? (pTreatment - pControl) / pControl : null, z, pValue }
 }
 
 export function srmCheck(controlN: number, treatmentN: number) {
+  if (![controlN, treatmentN].every(Number.isSafeInteger) || controlN < 0 || treatmentN < 0) return null
   const total = controlN + treatmentN
   if (total <= 0) return null
   const expected = total / 2

@@ -32,9 +32,9 @@ def _rows(table: str, order_by: str | None = None) -> list[dict[str, Any]]:
 def portfolio_bundle() -> dict[str, Any]:
     return {
         "meta": {
-            "projectName": "Liu Xi Growth Analytics Portfolio",
-            "projectNameZh": "刘希｜增长分析与实验决策作品集",
-            "version": "1.1.0",
+            "projectName": "Liu Xi Growth & Experiments",
+            "projectNameZh": "刘希｜增长与实验",
+            "version": "1.2.0",
             "dataBoundary": (
                 "关键变化来自去标识化实习复盘；本地数据库行级明细由固定规则生成，不包含雇主内部数据、代码或系统信息。"
             ),

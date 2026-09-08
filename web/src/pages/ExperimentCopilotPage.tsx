@@ -38,12 +38,13 @@ export function ExperimentCopilotPage({ data }: { data: CopilotData }) {
 
   const bucket = bucketResult?.unitId === userId ? bucketResult.value : null
   const srm = srmCheck(controlN, treatmentN)
-  const test = twoProportionTest(Math.round(controlN * controlRate / 100), controlN, Math.round(treatmentN * treatmentRate / 100), treatmentN)
+  const validRates = [controlRate, treatmentRate].every((value) => Number.isFinite(value) && value >= 0 && value <= 100)
+  const test = validRates ? twoProportionTest(Math.round(controlN * controlRate / 100), controlN, Math.round(treatmentN * treatmentRate / 100), treatmentN) : null
   const integrityPassed = checks.aa && checks.tracking && checks.balance && Boolean(srm?.passed)
   const statsPassed = Boolean(test && test.pValue < alpha)
   const businessPassed = Boolean(test && test.lift * 100 >= mde)
-  const releasePassed = integrityPassed && statsPassed && businessPassed && guardrail === 'pass'
-  const verdict = !integrityPassed ? '先修复实验可信度，再判断策略' : guardrail === 'fail' ? '护栏受损，暂不进入后续迭代' : guardrail === 'pending' ? '护栏待回收，保持观察' : statsPassed && businessPassed ? '支持进入后续迭代，并持续监控最终业务指标' : statsPassed ? '统计显著但未达到业务MDE，不建议仅凭p值推进' : '尚未通过统计检验，继续按预设周期观察'
+  const releasePassed = Boolean(design) && integrityPassed && statsPassed && businessPassed && guardrail === 'pass'
+  const verdict = !design || !test ? '请先修正试算参数，再查看结果' : !integrityPassed ? '完成分流与数据质量检查后，再评估策略' : guardrail === 'fail' ? '护栏受损，暂不进入后续迭代' : guardrail === 'pending' ? '护栏待回收，保持观察' : statsPassed && businessPassed ? '支持进入后续迭代，并持续监控最终业务指标' : statsPassed ? '统计显著但未达到业务MDE，不建议仅凭p值推进' : '未通过统计检验，按预设停止规则完成评估'
 
   const gates = [
     { label: 'AA与埋点', pass: checks.aa && checks.tracking, unknown: !(checks.aa && checks.tracking), detail: checks.aa && checks.tracking ? '已在本次试算中标记通过' : '项目复盘未披露，当前未录入' },
@@ -56,7 +57,7 @@ export function ExperimentCopilotPage({ data }: { data: CopilotData }) {
 
   return (
     <>
-      <PageHeader eyebrow="EXPERIMENT DESIGN · 从方案到决策" title="A/B 实验设计与决策治理" description="覆盖基线、MDE、显著性水平、统计功效、最小样本量、固定分流、A/A、SRM、人群均衡、业务显著性与价值护栏。" />
+      <PageHeader eyebrow="EXPERIMENT DESIGN · 从方案到决策" title="A/B 实验设计与结果试算" description="修改设计参数，查看样本量、稳定分流、组间差异与价值条件。项目事实与演示试算分开展示。" />
       <section className="content-section experiment-fact-banner">
         <Badge tone="purple">项目已确认事实</Badge>
         <p>两周、总样本约700万、1:1随机分流设计，邀请点击率17%→23.5%，p&lt;0.05；首月价值/激励成本倍数2.18，高于同口径外投1.90。</p>
@@ -94,7 +95,7 @@ export function ExperimentCopilotPage({ data }: { data: CopilotData }) {
             <SectionHeader label="03 · TRUST CHECK" title="AA、埋点与人群平衡" description="先验证实验是否可信，再讨论策略是否有效。" />
             <div className="trust-checks">
               {([
-                ['aa', 'AA核心指标无显著差异', '检查分流与历史基线'],
+                ['aa', 'AA与分流检查已完成', '核对随机波动、分流实现与指标口径'],
                 ['tracking', '埋点与指标口径一致', '分子、分母、去重与窗口已核对'],
                 ['balance', '关键人群分布均衡', '渠道、城市、设备分层检查'],
               ] as const).map(([key, title, note]) => <button type="button" key={key} className={checks[key] ? 'checked' : ''} aria-pressed={checks[key]} onClick={() => setChecks((value) => ({ ...value, [key]: !value[key] }))}><span>{checks[key] ? <Check size={17} /> : <CircleHelp size={17} />}</span><div><strong>{title}</strong><small>{note}</small></div></button>)}
@@ -107,6 +108,7 @@ export function ExperimentCopilotPage({ data }: { data: CopilotData }) {
               <div className="readout-arm"><Badge tone="neutral">对照组 · 旧版</Badge><NumberField label="样本量" value={controlN} onChange={setControlN} min={1} step={1000} /><NumberField label="邀请点击率" value={controlRate} onChange={setControlRate} suffix="%" min={0} max={100} /></div>
               <div className="readout-arm treatment"><Badge tone="purple">实验组 · 简化版</Badge><NumberField label="样本量" value={treatmentN} onChange={setTreatmentN} min={1} step={1000} /><NumberField label="邀请点击率" value={treatmentRate} onChange={setTreatmentRate} suffix="%" min={0} max={100} /></div>
             </div>
+            {!test && <p className="input-validation-message" role="status">请输入正整数样本量和 0%–100% 的转化率。两组均无成功或均全部成功时，比例 Z 检验的标准误为零，当前方法不输出统计量。</p>}
             <label className="guardrail-select"><span>护栏状态：首月价值/激励成本倍数</span><select value={guardrail} onChange={(event) => setGuardrail(event.target.value as typeof guardrail)}><option value="pass">未受损 / 通过</option><option value="pending">数据未回收完整</option><option value="fail">出现损失</option></select></label>
           </article>
         </div>
